@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/ramansharma/Desktop/OpenEnv/.venv/bin/python inference.py)",
+      "Bash(/Users/ramansharma/Desktop/OpenEnv/.venv/bin/python -c ' *)"
+    ]
+  }
+}

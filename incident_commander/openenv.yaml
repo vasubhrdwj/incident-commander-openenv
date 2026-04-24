@@ -1,0 +1,52 @@
+spec_version: 1
+name: incident_commander
+version: "0.1.0"
+description: >
+  OpenEnv simulator for long-horizon incident command: a microservices topology,
+  synthetic observability, specialist NPCs, deterministic faults, and a six-part
+  rubric grader with dense per-step rewards.
+
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+tags:
+  - openenv
+  - incident-response
+  - multi-agent
+  - long-horizon
+  - verifiable-reward
+
+# Task IDs match ``IC_TASK_ID`` (see server ``_make_env``). Seeds control
+# deterministic fault variants where applicable (medium task).
+tasks:
+  - id: easy_canary_regression
+    difficulty: easy
+    summary: >
+      Deductive canary regression; ground-truth mitigation is rollback of the
+      bad deploy on the affected service.
+  - id: medium_third_party_attribution
+    difficulty: medium
+    summary: >
+      Attributional third-party vs integration vs our-deploy variant (picked
+      from ``IC_SEED``); correct mitigation may be hold, feature_flag, or
+      rollback depending on variant.
+  - id: hard_silent_data_corruption
+    difficulty: hard
+    status: stub
+    summary: >
+      Stretch goal — partial rollback and audit-heavy RCA (not fully shipped
+      for the 48h sprint).
+
+# Human-readable summaries; full schemas live in ``models.py`` and ``GET /schema``.
+observation_space: >
+  Rich JSON ``ICObservation``: sim clock, dashboard health, alerts, optional
+  query results (logs/traces/audit/external status), NPC chat + specialist
+  reports, comms state, done flag, and incremental rubric-derived reward.
+
+action_space: >
+  Flat union ``ICAction`` with ``op`` in
+  {query_logs, query_metrics, query_trace, query_audit, query_external_status,
+  delegate, mitigate, communicate, diagnose, resolve, postmortem}; optional
+  fields carry service, mitigation kind, targets, diagnose hypotheses, etc.
