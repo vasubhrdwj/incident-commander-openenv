@@ -41,3 +41,8 @@ ENV/
 inference_runs/
 tmp/
 scratch/
+
+# AI Files
+CLAUDE.md
+.claude/
+.cursor/
