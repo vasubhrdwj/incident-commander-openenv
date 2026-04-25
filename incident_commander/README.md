@@ -17,23 +17,29 @@ tags:
 
 **Environment:** Deterministic simulator over a **6-service graph**, **fault injection** (task-dependent), **synthetic logs / metrics / traces / audit / external status**, and **four specialist NPCs** (SRE, Security, Comms, Eng Lead) implemented as deterministic FSMs. Each HTTP/WebSocket session is one episode with a fixed step budget.
 
-**Shipped tasks (2):**
+**Shipped tasks (3):**
 
-| `IC_TASK_ID` | Focus | Notes |
-| --- | --- | --- |
-| `easy_canary_regression` | Deductive canary regression | Ground-truth mitigation: **rollback** |
-| `medium_third_party_attribution` | Third-party vs integration vs bad deploy | Variant from **`IC_SEED`**; mitigation may be **hold**, **feature_flag**, or **rollback** |
+| `IC_TASK_ID` | Cognitive ability tested | Right mitigation | Right comms |
+| --- | --- | --- | --- |
+| `easy_canary_regression` | **Reactive deduction** ("read what's in front of you") | `rollback` | `status_page` |
+| `medium_third_party_attribution` | **Discriminative attribution** ("tell apart things that look alike") — variant by `IC_SEED` mod 3 | `hold` / `feature_flag` / `rollback` | `status_page` |
+| `hard_silent_data_corruption` | **Inverted reasoning under no signal** ("act when nothing tells you to") | `partial_rollback` | `customer_email` + cohort |
 
-**Stretch (stub in repo):** `hard_silent_data_corruption` — low-signal corruption + **partial_rollback** (not required for HF demo).
+The same scripted oracle scores **0.872 / 0.468 / 0.239** across the three tasks — concrete evidence the env doesn't reward repetition of one trick.
 
 Full design narrative: see repo root **`PROJECT.md`** (one directory up from this package).
 
-### Live Space (early deploy)
+### Submission materials
 
 | | URL |
 | --- | --- |
-| **Hub** | [vasubhrdwj/incident-commander-openenv](https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv) |
+| **HF Space (env)** | [vasubhrdwj/incident-commander-openenv](https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv) |
 | **Running app** | [vasubhrdwj-incident-commander-openenv.hf.space](https://vasubhrdwj-incident-commander-openenv.hf.space) |
+| **Demo replay UI** | [vasubhrdwj-incident-commander-openenv.hf.space/replay](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) |
+| **Training Colab** | [`training/train_colab.ipynb`](training/train_colab.ipynb) — judges can open in Colab and run end-to-end |
+| **Trained LoRA adapter** | [vasubhrdwj/incident-commander-llama3.2-3b-rft](https://huggingface.co/vasubhrdwj/incident-commander-llama3.2-3b-rft) *(populated after the Colab run)* |
+| **2-min pitch script** | [`demo/PITCH.md`](demo/PITCH.md) |
+| **Mini-blog / writeup** | *TODO: link your HF post or 2-min YouTube video here* |
 
 Smoke-test the API: `openenv validate --url https://vasubhrdwj-incident-commander-openenv.hf.space`
 
@@ -96,20 +102,58 @@ Six **independent** weighted components (dense per-step + terminal), all clamped
 | Containment | 0.25 | Limit blast radius / premature bad mitigations |
 | MTTR | 0.20 | Time from fault to correct mitigation |
 | Correct RCA | 0.20 | `diagnose` vs ground truth (partial credit for service-only) |
-| Right mitigation | 0.15 | Correct `mitigate` for this task (`hold` rewarded only when ground truth) |
-| Comms SLA | 0.10 | Timely status-page update; anti-spam |
+| Right mitigation | 0.15 | Correct `mitigate` for this task (`hold` and `partial_rollback` rewarded only when ground truth) |
+| Comms SLA | 0.10 | Timely comms; **task-conditional channel** — `status_page` on easy/medium, `customer_email`+cohort on hard |
 | Post-mortem | 0.10 | Validated JSON structure + factual fields at end |
+
+**Anti-gaming guards (structural, not heuristic):**
+- `hold` mitigation credits only when ground truth is `hold` (otherwise zero — easy-task `hold` earns nothing).
+- `partial_rollback` mitigation rejects full `rollback` on the data-corruption fault (easy-task playbook does not transfer).
+- Comms grader is task-conditional on `correct_mitigation` — `status_page` on the hard task earns 0 comms.
+- Status-page spam (≥2 posts within 60s) zeros the comms component.
+- Invalid actions burn a step — no free retries.
 
 ---
 
-## Baseline scores (fill as you run eval)
+## Training — RFT (rejection-sampling fine-tuning)
+
+The submission's training pipeline is **online RFT**: each iteration samples N=6 fresh rollouts from a live env server, keeps the top K=2 by reward, and SFTs Llama-3.2-3B-Instruct (LoRA, rank 16, 4-bit base via Unsloth) on those trajectories. The training loop **connects to the live `IncidentCommanderEnvironment`** every iteration, not a static dataset.
+
+**Run it yourself**: open [`training/train_colab.ipynb`](training/train_colab.ipynb) in Colab → `Runtime → T4 GPU` → `Run all`. ~30–40 min wall time on a free T4. The notebook generates the four PNGs below and pushes the LoRA adapter to your HF Hub repo.
+
+### Plots (populated after running the Colab)
+
+| | Caption |
+| --- | --- |
+| ![score summary](assets/score_summary.png) | **Headline:** pre vs post-training total score, error bars from 3 eval episodes. |
+| ![training reward](assets/training_reward.png) | Mean rollout score across all sampled rollouts (grey), top-K kept (green), best-of-batch (amber). Trends up over 8 RFT iterations. |
+| ![training loss](assets/training_loss.png) | SFT NLL loss against rejection-sampled top-K trajectories. Trends down. |
+| ![component breakdown](assets/component_comparison.png) | Pre/post totals against the six rubric component weight ceilings. |
+
+### Honest ablation: GRPO regressed
+
+We tried GRPO first (`training/train_grpo.py`, with the original Colab notebook at `training/train_grpo_colab.ipynb`). The run regressed: **pre = 0.736 → post = 0.380, Δ = –0.356**. Diagnosed causes (so future work can fix):
+- **Parse failures dominated the advantage**: when 3 of 4 rollouts in a group emit malformed JSON, group mean ≈ 0 and `(0 - 0)/(0 + ε)` is a huge unsigned advantage that gets multiplied through the policy gradient.
+- **No KL penalty to the reference model**: omitted to fit a 4-bit reference into a free T4. Without it the policy drifts arbitrarily far from base.
+- **Eval at T=0.1**: greedy decoding reads whatever mode the policy collapsed into. Even a partially-improved policy looks regressed at low temp.
+
+We documented this as a known ablation rather than papering over it. The RFT pipeline above replaces it as the primary training story.
+
+### Inference-time evidence (separate from RFT)
+
+Best-of-N reward-guided sampling at T=0.9 with N=3 on Llama-3.2-3B base matched the oracle ceiling: **0.872 max / 0.855 mean** on `easy_canary_regression`. The rubric is a verifier — sampling N times and keeping the best is a valid post-training improvement lever even when weight updates fail. See `training/best_of_n.py`.
+
+---
+
+## Baseline scores
 
 | Task | Policy | Seed | Final score | Notes |
 | --- | --- | --- | --- | --- |
 | easy_canary_regression | Oracle / ideal (`IC_MOCK_POLICY=1`) | 0 | 0.872 | Scripted ceiling, used to calibrate rubric |
 | easy_canary_regression | Llama-3.2-3B-Instruct (base, T=0.1) | 0 | 0.736 | Zero-shot, mean across 3 eval episodes |
 | easy_canary_regression | Llama-3.2-3B-Instruct + GRPO LoRA (50 iter) | 0 | 0.380 | **Regressed** — archived as failed ablation (parse-error-dominated advantage, no KL, mode collapse). Not shipped. |
-| easy_canary_regression | Llama-3.2-3B-Instruct best-of-N (N=3, T=0.9) | 0 | **0.872** (max) / 0.855 (mean) | Plan §4.5.7 reward-guided sampling — inference-time, not trained weights. Scores: 0.872, 0.846, 0.846. Matched the oracle ceiling on the first draw. Run truncated at N=3 by HF free-tier quota. |
+| easy_canary_regression | Llama-3.2-3B-Instruct best-of-N (N=3, T=0.9) | 0 | **0.872** (max) / 0.855 (mean) | Reward-guided sampling — inference-time, not trained weights. Scores: 0.872, 0.846, 0.846. Matched the oracle ceiling on the first draw. Run truncated at N=3 by HF free-tier quota. |
+| easy_canary_regression | Llama-3.2-3B-Instruct **+ RFT LoRA** (8 iter × 6 rollouts) | 0 | *populated by Colab run* | Online rejection-sampling fine-tuning — see [`training/train_colab.ipynb`](training/train_colab.ipynb). Plots in `assets/`. |
 | medium_third_party_attribution | Oracle / ideal | 0,1,2 | *TBD* | One row per variant |
 | medium_third_party_attribution | LLM baseline | * | *TBD* | |
 | hard_silent_data_corruption | Oracle / ideal (`IC_MOCK_POLICY=1`) | 0 | **0.855** | Audit-only detection + `partial_rollback` + targeted `customer_email`. No alerts ever fire on this task. |
