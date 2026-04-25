@@ -67,13 +67,17 @@ app = create_app(
 )
 
 
-# --- /web demo replay UI -------------------------------------------------
+# --- /replay demo replay UI ----------------------------------------------
 #
-# A tiny self-contained dark-theme HTML viewer that loads
+# A self-contained dark-theme HTML viewer that loads
 # ``demo/episodes.json`` and plays back the three demo episodes step-by-step,
-# animating the six-component rubric bars as actions land. Mounted on the
-# same FastAPI app that serves ``/reset`` / ``/step`` so the HF Space ships
-# one URL — judges hitting the Space see this immediately, not Swagger docs.
+# animating the six-component rubric bars as actions land.
+#
+# Why ``/replay`` and not ``/web``: openenv-core's runtime base image ships a
+# built-in playground UI at ``/web`` (auto-generated from the action schema).
+# Our custom route would be shadowed by that mount in production deployments
+# even though it works in older local installs. We use ``/replay`` to stay
+# out of the framework's path namespace.
 #
 # Path resolution: ``Path(__file__).parent.parent`` resolves to the package
 # root both when installed (``incident_commander/``) and in the Docker
@@ -85,8 +89,8 @@ _WEB_INDEX = _REPO_ROOT / "web" / "index.html"
 _DEMO_EPISODES = _REPO_ROOT / "demo" / "episodes.json"
 
 
-@app.get("/web", response_class=HTMLResponse, include_in_schema=False)
-def web_ui() -> HTMLResponse:
+@app.get("/replay", response_class=HTMLResponse, include_in_schema=False)
+def replay_ui() -> HTMLResponse:
     """Serve the demo replay viewer."""
     if not _WEB_INDEX.exists():
         return HTMLResponse(
@@ -96,8 +100,8 @@ def web_ui() -> HTMLResponse:
     return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
 
 
-@app.get("/web/episodes.json", include_in_schema=False)
-def web_episodes() -> JSONResponse:
+@app.get("/replay/episodes.json", include_in_schema=False)
+def replay_episodes() -> JSONResponse:
     """Serve the precomputed demo episodes for the replay viewer."""
     if not _DEMO_EPISODES.exists():
         return JSONResponse(

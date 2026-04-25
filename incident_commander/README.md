@@ -140,6 +140,12 @@ PYTHONPATH=. python -m incident_commander.demo.run_episodes
 # writes demo/episodes.json; runs in <2 seconds
 ```
 
+You can also view the same three episodes as an animated rubric replay
+in your browser at **`/replay`** on any running server (local or HF
+Space). It loads `demo/episodes.json` and animates the six-component
+rubric bars filling step-by-step — the cleanest single visual of the
+"structural anti-gaming guards bite" headline.
+
 The 2-minute pitch script keyed to terminal screens lives at
 [`demo/PITCH.md`](demo/PITCH.md).
 
@@ -180,7 +186,7 @@ docker run --rm -p 8000:8000 \
   incident-commander-env:latest
 ```
 
-OpenAPI: **http://localhost:8000/docs** · Web UI: **http://localhost:8000/web**
+OpenAPI: **http://localhost:8000/docs** · Playground: **http://localhost:8000/web** · Demo replay: **http://localhost:8000/replay**
 
 ---
 
