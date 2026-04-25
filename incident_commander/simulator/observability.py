@@ -143,6 +143,8 @@ class ObservabilityLayer:
                 logs.extend(_bad_deploy_logs(fault, service, window_start, window_end, limit, rng))
             elif isinstance(fault, ThirdPartyOutageFault):
                 logs.extend(_third_party_logs(fault, service, window_start, window_end, limit, rng))
+            elif isinstance(fault, DataCorruptionFault):
+                logs.extend(_data_corruption_logs(fault, service, window_start, window_end, rng))
 
         if len(logs) < limit:
             logs.extend(
@@ -222,8 +224,24 @@ class ObservabilityLayer:
         window_start = max(0, since_sec)
 
         if fault is not None and isinstance(fault, DataCorruptionFault) and fault.is_active(sim_time_sec):
-            for i in range(min(limit, 4)):
-                ts = max(window_start, fault.fires_at_sec) + 10 * i
+            # 1. Migration completion event (non-anomalous, anchors the timeline).
+            if fault.migration_at_sec >= window_start and fault.migration_at_sec <= sim_time_sec:
+                events.append(
+                    AuditEvent(
+                        timestamp_sec=fault.migration_at_sec,
+                        actor=f"deploy:{fault.service}",
+                        action="migration.complete",
+                        resource=f"{fault.service}/{fault.migration_tag}",
+                        anomalous=False,
+                    )
+                )
+            # 2. Anomalous writes clustered after the migration. The audit
+            # pipeline flags these because their write pattern (bulk update
+            # to a balance column) doesn't match this service's typical
+            # workload — that's the only signal there is.
+            anchor = fault.migration_at_sec
+            for i in range(min(limit - len(events), 4)):
+                ts = max(window_start, anchor) + 10 * (i + 1)
                 if ts > sim_time_sec:
                     break
                 events.append(
@@ -231,7 +249,7 @@ class ObservabilityLayer:
                         timestamp_sec=ts,
                         actor=f"svc:{fault.service}",
                         action="db.write",
-                        resource=f"{fault.service}/orders_migration",
+                        resource=f"{fault.service}/{fault.migration_tag}/balances",
                         anomalous=True,
                     )
                 )
@@ -423,6 +441,37 @@ def _third_party_logs(
                 )
             )
 
+    return logs
+
+
+def _data_corruption_logs(
+    fault: DataCorruptionFault,
+    service: str,
+    window_start: int,
+    window_end: int,
+    rng: random.Random,
+) -> list[LogLine]:
+    """One info-level migration-complete line; nothing else looks wrong.
+
+    The deliberate sparseness is the point: a model that scans logs hoping
+    for an error pattern finds nothing actionable. The migration line is
+    the one breadcrumb that, combined with the audit cluster, lets the
+    agent correlate the timeline.
+    """
+    logs: list[LogLine] = []
+    ts = fault.migration_at_sec
+    if window_start <= ts <= window_end:
+        logs.append(
+            LogLine(
+                timestamp_sec=ts,
+                service=service,
+                level="info",
+                message=(
+                    f"migration_apply release={fault.migration_tag} status=ok "
+                    f"rows_touched=~127k duration_ms=412"
+                ),
+            )
+        )
     return logs
 
 

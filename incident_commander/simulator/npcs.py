@@ -116,6 +116,23 @@ class CommsNPC(NPCSpecialist):
         graph: ServiceGraph,
         sim_time_sec: int,
     ) -> NPCReport:
+        # Silent data corruption: dashboards are clean, so the impacted-services
+        # heuristic would say "all good" — but the right comms move is a
+        # targeted customer email to the affected cohort, not a status-page
+        # broadcast that spooks users who weren't impacted.
+        if fault is not None and isinstance(fault, DataCorruptionFault):
+            findings = (
+                f"Do NOT post a status_page update — public broadcast on a "
+                f"contained data issue creates unnecessary panic. Right move "
+                f"is a targeted customer_email to the affected cohort "
+                f"(cohort='affected_accounts' is the cohort tag the data "
+                f"team uses post-{fault.migration_tag}). Draft: 'We've "
+                f"identified an issue affecting your account balance after "
+                f"a recent maintenance window. We're fixing it now and will "
+                f"send a confirmation when corrected.'"
+            )
+            return NPCReport(role=self.role, task=task, findings=findings, received_at_sec=sim_time_sec)
+
         impacted = _impacted_services(graph)
         if not impacted:
             findings = (

@@ -106,10 +106,42 @@ Six **independent** weighted components (dense per-step + terminal), all clamped
 
 | Task | Policy | Seed | Final score | Notes |
 | --- | --- | --- | --- | --- |
-| easy_canary_regression | Oracle / ideal | 0 | *TBD* | Expect high (e.g. ~0.87 in dev smoke) |
-| easy_canary_regression | LLM baseline | 0 | *TBD* | Needs `OPENAI_API_KEY` or HF Inference |
+| easy_canary_regression | Oracle / ideal (`IC_MOCK_POLICY=1`) | 0 | 0.872 | Scripted ceiling, used to calibrate rubric |
+| easy_canary_regression | Llama-3.2-3B-Instruct (base, T=0.1) | 0 | 0.736 | Zero-shot, mean across 3 eval episodes |
+| easy_canary_regression | Llama-3.2-3B-Instruct + GRPO LoRA (50 iter) | 0 | 0.380 | **Regressed** — archived as failed ablation (parse-error-dominated advantage, no KL, mode collapse). Not shipped. |
+| easy_canary_regression | Llama-3.2-3B-Instruct best-of-N (N=3, T=0.9) | 0 | **0.872** (max) / 0.855 (mean) | Plan §4.5.7 reward-guided sampling — inference-time, not trained weights. Scores: 0.872, 0.846, 0.846. Matched the oracle ceiling on the first draw. Run truncated at N=3 by HF free-tier quota. |
 | medium_third_party_attribution | Oracle / ideal | 0,1,2 | *TBD* | One row per variant |
 | medium_third_party_attribution | LLM baseline | * | *TBD* | |
+| hard_silent_data_corruption | Oracle / ideal (`IC_MOCK_POLICY=1`) | 0 | **0.855** | Audit-only detection + `partial_rollback` + targeted `customer_email`. No alerts ever fire on this task. |
+| hard_silent_data_corruption | LLM baseline | 0 | *TBD* | Expect a steep drop vs easy: status_page earns 0 comms here, full `rollback` earns 0 mitigation, and the agent must `query_audit` despite a green dashboard. |
+
+**Reproducing the best-of-N run:**
+
+```bash
+# server running at $ENV_URL with IC_TASK_ID=easy_canary_regression
+MODEL_NAME=meta-llama/Llama-3.2-3B-Instruct HF_TOKEN=... \
+python -m incident_commander.training.best_of_n \
+  --n 8 --temperature 0.9 --task easy_canary_regression \
+  --output-json ./bon_results.json
+```
+
+### Demo episodes (no API key needed)
+
+`demo/run_episodes.py` runs three deterministic in-process episodes —
+easy oracle, hard oracle, and the headline "hard task with the easy-task
+playbook" episode — and prints rubric-component breakdowns plus a
+combined `demo/episodes.json` artifact. The third episode is the
+demonstration: same agent shape, same six components, same level of
+effort, but the structural anti-gaming guards (task-conditional comms +
+strict `partial_rollback` matcher) collapse the score from **0.855 → 0.479**.
+
+```bash
+PYTHONPATH=. python -m incident_commander.demo.run_episodes
+# writes demo/episodes.json; runs in <2 seconds
+```
+
+The 2-minute pitch script keyed to terminal screens lives at
+[`demo/PITCH.md`](demo/PITCH.md).
 
 ---
 

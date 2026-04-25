@@ -1,0 +1,10 @@
+# Pinned runtime deps for the env server.
+# Mirrors ``[project.dependencies]`` in pyproject.toml. Kept at package root
+# per the OpenEnv submission checklist; actual installs still go through
+# pyproject.toml via ``uv sync`` (see Dockerfile).
+#
+# Training extras (torch, trl, unsloth, ...) are GPU-only and intentionally
+# NOT listed here — the env server runs CPU-only on HF Spaces.
+
+openenv-core[core]>=0.2.2
+python-dotenv>=1.2.2

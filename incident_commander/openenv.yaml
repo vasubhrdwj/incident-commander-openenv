@@ -34,10 +34,13 @@ tasks:
       rollback depending on variant.
   - id: hard_silent_data_corruption
     difficulty: hard
-    status: stub
     summary: >
-      Stretch goal — partial rollback and audit-heavy RCA (not fully shipped
-      for the 48h sprint).
+      No alerts, no red dashboards — just a customer-reported balance
+      discrepancy. Detection requires `query_audit` to find anomalous writes
+      clustered around a recent migration; correct mitigation is
+      `partial_rollback` on the affected service; correct comms is a
+      targeted `customer_email` to the affected cohort (a status_page
+      broadcast earns 0 comms credit on this task).
 
 # Human-readable summaries; full schemas live in ``models.py`` and ``GET /schema``.
 observation_space: >

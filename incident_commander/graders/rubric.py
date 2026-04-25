@@ -187,9 +187,33 @@ class RubricGrader:
         self.score.mitigation = self.weights.mitigation
 
     def _update_comms(self, sim: "Simulator") -> None:
+        """Award the comms component, branching on what the task actually needs.
+
+        For most incidents the right channel is a public ``status_page``
+        update within SLA, so that's the default. For the hard
+        silent-corruption task, however, broadcasting "we have data
+        corruption" on the status page is actively wrong — it spooks users
+        who weren't affected. The right comms is a ``customer_email`` to
+        the targeted ``cohort``. We dispatch on ``correct_mitigation``
+        rather than ``task_id`` so this stays a property of the fault, not
+        a special case.
+        """
         sla_window = sim.task.comms_sla_sec
         fault_fires_at = sim.fault.fires_at_sec
 
+        if sim.fault.correct_mitigation == "partial_rollback":
+            self._update_comms_targeted_email(sim, fault_fires_at, sla_window)
+            return
+
+        self._update_comms_status_page(sim, fault_fires_at, sla_window)
+
+    def _update_comms_status_page(
+        self,
+        sim: "Simulator",
+        fault_fires_at: int,
+        sla_window: int,
+    ) -> None:
+        """Default broadcast-style comms grader (easy + medium tasks)."""
         status_page_events = [
             msg for msg in sim.chat_feed if msg.channel == "status_page"
         ]
@@ -212,6 +236,38 @@ class RubricGrader:
             self.score.comms = comms_score
         elif comms_score < self.score.comms:
             self.score.comms = comms_score
+
+    def _update_comms_targeted_email(
+        self,
+        sim: "Simulator",
+        fault_fires_at: int,
+        sla_window: int,
+    ) -> None:
+        """Hard-task comms grader: targeted customer_email with a cohort.
+
+        Requirements for credit:
+
+        * Channel is ``customer_email`` (not ``status_page``).
+        * ``cohort`` is set to a non-empty string (targeted, not blast).
+        * Sent within ``sla_window`` of the fault firing.
+
+        A ``status_page`` post on a silent-corruption incident earns 0 — by
+        design, since broadcasting noise about a contained issue creates
+        unnecessary panic. This is a structural anti-gaming guard: the
+        easy-task playbook (post status_page → done) does not transfer
+        here.
+        """
+        for msg in sim.chat_feed:
+            if msg.channel != "customer_email":
+                continue
+            if not msg.cohort or not msg.cohort.strip():
+                continue
+            elapsed_since_fault = msg.timestamp_sec - fault_fires_at
+            if elapsed_since_fault < 0 or elapsed_since_fault > sla_window:
+                continue
+            if self.weights.comms > self.score.comms:
+                self.score.comms = self.weights.comms
+            return
 
     def _update_containment(self, sim: "Simulator") -> None:
         max_allowed = max(sim.task.max_blast_radius, 1e-9)

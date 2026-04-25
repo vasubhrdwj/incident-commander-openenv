@@ -1,0 +1,119 @@
+{
+  "summary": {
+    "task": "easy_canary_regression",
+    "model": "Qwen/Qwen2.5-72B-Instruct",
+    "n": 8,
+    "temperature": 0.9,
+    "scores": [
+      0.871564,
+      0.846306,
+      0.846306,
+      0.0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "mean": 0.320522,
+    "std": 0.4424310563718213,
+    "max_score": 0.871564,
+    "max_index": 0,
+    "errors": 5
+  },
+  "episodes": [
+    {
+      "index": 0,
+      "steps": 7,
+      "score": 0.871564,
+      "rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.15,
+        0.2,
+        0.421564
+      ],
+      "success": true,
+      "error": null
+    },
+    {
+      "index": 1,
+      "steps": 8,
+      "score": 0.846306,
+      "rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.2,
+        0.15,
+        0.0,
+        0.396306
+      ],
+      "success": true,
+      "error": null
+    },
+    {
+      "index": 2,
+      "steps": 8,
+      "score": 0.846306,
+      "rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.2,
+        0.15,
+        0.0,
+        0.396306
+      ],
+      "success": true,
+      "error": null
+    },
+    {
+      "index": 3,
+      "steps": 4,
+      "score": 0.0,
+      "rewards": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "success": false,
+      "error": "action_selection_error: APIStatusError: Error code: 402 - {'error': 'You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage.'}"
+    },
+    {
+      "index": 4,
+      "steps": 1,
+      "score": 0,
+      "rewards": [],
+      "success": false,
+      "error": "action_selection_error: APIStatusError: Error code: 402 - {'error': 'You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage.'}"
+    },
+    {
+      "index": 5,
+      "steps": 1,
+      "score": 0,
+      "rewards": [],
+      "success": false,
+      "error": "action_selection_error: APIStatusError: Error code: 402 - {'error': 'You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage.'}"
+    },
+    {
+      "index": 6,
+      "steps": 1,
+      "score": 0,
+      "rewards": [],
+      "success": false,
+      "error": "action_selection_error: APIStatusError: Error code: 402 - {'error': 'You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage.'}"
+    },
+    {
+      "index": 7,
+      "steps": 1,
+      "score": 0,
+      "rewards": [],
+      "success": false,
+      "error": "action_selection_error: APIStatusError: Error code: 402 - {'error': 'You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage.'}"
+    }
+  ]
+}

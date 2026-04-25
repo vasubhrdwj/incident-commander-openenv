@@ -361,14 +361,50 @@ class ThirdPartyOutageFault(Fault):
 
 @dataclass
 class DataCorruptionFault(Fault):
-    """Stub: silent post-migration data corruption (hard task).
+    """Silent post-migration data corruption (hard task).
 
-    Architecture placeholder; full behaviour implemented in the hard-task todo.
-    Dashboards stay green by design — detection requires querying audit logs.
+    Drives ``hard_silent_data_corruption``. Defining property: **the dashboard
+    stays green and no alerts ever fire**. Latency, error_rate, and traffic on
+    ``orders`` continue to look normal because individual requests succeed —
+    they just write the wrong row data. Detection requires the IC to:
+
+    1. Read the task description (a customer-reported balance discrepancy is
+       the entry point — there is no pager).
+    2. Pull ``query_audit`` for the affected service to see anomalous
+       ``db.write`` events clustered around the migration tag.
+    3. Correlate the cluster against the recent migration (the Eng Lead and
+       Security NPCs both surface ``migration_tag`` in their findings).
+    4. Issue ``partial_rollback`` on the affected service — a full
+       ``rollback`` would lose unrelated writes that landed after the
+       migration, so the right move is the migration-scoped partial.
+
+    Comms also differ: a status-page broadcast on a silent-corruption
+    incident creates panic across users who weren't affected. The right move
+    is a ``customer_email`` to the targeted cohort. The comms grader is
+    task-conditional on ``correct_mitigation`` to enforce this without the
+    rest of the rubric drifting.
+
+    Determinism: ``apply`` is deliberately a no-op on the service graph —
+    that's not a stub, it's the contract. Blast radius growth is driven
+    purely by the simulator's own ``_accumulate_blast_radius`` against the
+    task's ``max_blast_radius`` and a slow horizon, so the same action
+    sequence still produces bit-identical observations.
     """
 
     service: str = "orders"
     migration_tag: str = "migration-2026-04-19"
+    migration_at_sec: int = 0  # set in __post_init__ relative to fires_at_sec
+
+    def __post_init__(self) -> None:
+        # The migration shipped a little earlier than the customer report
+        # came in — that lag is what makes the "no alert ever fired" framing
+        # plausible. Audit events anchor at this timestamp.
+        self.migration_at_sec = max(0, self.fires_at_sec - 5)
+        self.description = (
+            f"Silent data corruption on {self.service} traced to "
+            f"{self.migration_tag} (shipped at t={self.migration_at_sec}s). "
+            f"Dashboards remain green; detection is via audit log only."
+        )
 
     @property
     def ground_truth_service(self) -> str:
@@ -382,7 +418,40 @@ class DataCorruptionFault(Fault):
     def correct_mitigation(self) -> MitigationKind:
         return "partial_rollback"
 
+    @property
+    def recovery_window_sec(self) -> int:
+        # Partial rollback against a single migration is fast: replay the
+        # migration's reverse SQL against the affected cohort only.
+        return 90
+
+    def try_mitigate(
+        self,
+        *,
+        mitigation: MitigationKind,
+        target: Optional[str],
+        sim_time_sec: int,
+    ) -> bool:
+        """Strict matcher: only ``partial_rollback`` on the corrupted service fixes it.
+
+        A full ``rollback`` does **not** credit — it would discard unrelated
+        writes that landed after the migration. This is the structural
+        anti-gaming guard that makes the easy-task playbook (call rollback
+        on the affected service) score zero on the hard task.
+        """
+        if self.mitigated:
+            return False
+        if mitigation != "partial_rollback":
+            return False
+        if target != self.service:
+            return False
+        self.mitigated = True
+        self.mitigated_at_sec = sim_time_sec
+        return True
+
     def apply(self, graph: ServiceGraph, sim_time_sec: int) -> None:
+        # Intentional no-op on the graph: silence is the fault's defining
+        # property. Do NOT add latency / error-rate spikes here — that would
+        # turn this into a regular bad_deploy variant and trivialise it.
         return
 
 
