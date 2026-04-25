@@ -170,13 +170,21 @@ def _hard_with_easy_playbook() -> list[ICAction]:
 
 @dataclass
 class EpisodeRecord:
-    """One demo episode's full trace + rubric breakdown."""
+    """One demo episode's full trace + rubric breakdown.
+
+    ``component_history`` is a list aligned with ``actions``: each entry is a
+    snapshot of the six rubric components *after* that action landed. The UI
+    replay viewer animates the component bars from these snapshots, which is
+    what makes "see the rubric fill up step by step" possible without any
+    LLM-as-judge or wall-clock timing.
+    """
 
     title: str
     task_id: str
     seed: int
     actions: list[dict[str, Any]]
     step_rewards: list[float]
+    component_history: list[dict[str, float]]
     components: dict[str, float]
     total: float
     mitigated: bool
@@ -189,6 +197,7 @@ class EpisodeRecord:
             "seed": self.seed,
             "actions": self.actions,
             "step_rewards": self.step_rewards,
+            "component_history": self.component_history,
             "components": self.components,
             "total": self.total,
             "mitigated": self.mitigated,
@@ -245,6 +254,7 @@ def run_episode(
 
     step_rewards: list[float] = []
     actions_log: list[dict[str, Any]] = []
+    component_history: list[dict[str, float]] = []
     last_obs = None
 
     for i, action in enumerate(script, start=1):
@@ -253,6 +263,18 @@ def run_episode(
         reward = float(obs.reward or 0.0)
         step_rewards.append(reward)
         actions_log.append(_action_to_dict(action))
+        # Snapshot the rubric *after* this step so the UI can animate
+        # the component bars filling in lockstep with the action trace.
+        s = env._grader.score
+        component_history.append({
+            "containment": round(s.containment, 4),
+            "mttr": round(s.mttr, 4),
+            "rca": round(s.rca, 4),
+            "mitigation": round(s.mitigation, 4),
+            "comms": round(s.comms, 4),
+            "postmortem": round(s.postmortem, 4),
+            "total": round(s.total, 4),
+        })
         if verbose:
             print(f"  [STEP {i:>2}] {_action_summary(action)}")
             print(f"           → +{reward:.3f}   (cumulative {sum(step_rewards):.3f})")
@@ -285,6 +307,7 @@ def run_episode(
         seed=seed,
         actions=actions_log,
         step_rewards=step_rewards,
+        component_history=component_history,
         components=components,
         total=total,
         mitigated=env._sim.fault.mitigated,

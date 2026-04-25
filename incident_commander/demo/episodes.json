@@ -47,6 +47,62 @@
         0.15,
         0.421564
       ],
+      "component_history": [
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.1
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.0,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.3
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.15,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.45
+        },
+        {
+          "containment": 0.1875,
+          "mttr": 0.1341,
+          "rca": 0.2,
+          "mitigation": 0.15,
+          "comms": 0.1,
+          "postmortem": 0.1,
+          "total": 0.8716
+        }
+      ],
       "components": {
         "containment": 0.1875,
         "mttr": 0.1341,
@@ -108,6 +164,62 @@
         0.15,
         0.404584
       ],
+      "component_history": [
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.1
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.0,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.3
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.15,
+          "comms": 0.1,
+          "postmortem": 0.0,
+          "total": 0.45
+        },
+        {
+          "containment": 0.1792,
+          "mttr": 0.1254,
+          "rca": 0.2,
+          "mitigation": 0.15,
+          "comms": 0.1,
+          "postmortem": 0.1,
+          "total": 0.8546
+        }
+      ],
       "components": {
         "containment": 0.1792,
         "mttr": 0.1254,
@@ -166,6 +278,62 @@
         0.2,
         0.0,
         0.279167
+      ],
+      "component_history": [
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.0,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.0
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.2
+        },
+        {
+          "containment": 0.0,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.0,
+          "total": 0.2
+        },
+        {
+          "containment": 0.1792,
+          "mttr": 0.0,
+          "rca": 0.2,
+          "mitigation": 0.0,
+          "comms": 0.0,
+          "postmortem": 0.1,
+          "total": 0.4792
+        }
       ],
       "components": {
         "containment": 0.1792,

@@ -17,6 +17,7 @@ Endpoints:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 try:
     from openenv.core.env_server.http_server import create_app
@@ -24,6 +25,8 @@ except Exception as e:  # pragma: no cover - surfaced during dependency resoluti
     raise ImportError(
         "openenv is required for the web interface. Install dependencies with 'uv sync'."
     ) from e
+
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 try:
     from ..models import ICAction, ICObservation
@@ -62,6 +65,46 @@ app = create_app(
     env_name="incident_commander",
     max_concurrent_envs=1,
 )
+
+
+# --- /web demo replay UI -------------------------------------------------
+#
+# A tiny self-contained dark-theme HTML viewer that loads
+# ``demo/episodes.json`` and plays back the three demo episodes step-by-step,
+# animating the six-component rubric bars as actions land. Mounted on the
+# same FastAPI app that serves ``/reset`` / ``/step`` so the HF Space ships
+# one URL — judges hitting the Space see this immediately, not Swagger docs.
+#
+# Path resolution: ``Path(__file__).parent.parent`` resolves to the package
+# root both when installed (``incident_commander/``) and in the Docker
+# image (``/app/env``), because the Dockerfile copies the whole tree to
+# ``/app/env`` and runs from there.
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_WEB_INDEX = _REPO_ROOT / "web" / "index.html"
+_DEMO_EPISODES = _REPO_ROOT / "demo" / "episodes.json"
+
+
+@app.get("/web", response_class=HTMLResponse, include_in_schema=False)
+def web_ui() -> HTMLResponse:
+    """Serve the demo replay viewer."""
+    if not _WEB_INDEX.exists():
+        return HTMLResponse(
+            "<h1>UI not bundled</h1><p>web/index.html missing from this build.</p>",
+            status_code=500,
+        )
+    return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
+
+
+@app.get("/web/episodes.json", include_in_schema=False)
+def web_episodes() -> JSONResponse:
+    """Serve the precomputed demo episodes for the replay viewer."""
+    if not _DEMO_EPISODES.exists():
+        return JSONResponse(
+            {"error": "demo/episodes.json missing — run `python -m incident_commander.demo.run_episodes`"},
+            status_code=404,
+        )
+    return FileResponse(_DEMO_EPISODES, media_type="application/json")
 
 
 def main() -> None:

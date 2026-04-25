@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Incident Commander · OpenEnv replay</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #131820;
+    --panel-2: #1a2230;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #6b7280;
+    --dim: #374151;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --accent: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  header .subtitle {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  header .meta {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 8px;
+  }
+  header .meta a { color: var(--muted); text-decoration: underline; }
+
+  .episodes-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .ep-tab {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    text-align: left;
+  }
+  .ep-tab:hover { border-color: var(--accent); }
+  .ep-tab.active {
+    background: var(--panel-2);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .ep-tab .ep-num { color: var(--muted); font-size: 10px; }
+  .ep-tab .ep-name { display: block; font-weight: 600; margin-top: 2px; }
+  .ep-tab .ep-score { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; }
+  .ep-tab.active .ep-score { color: var(--accent); }
+
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .controls button {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+  }
+  .controls button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .controls .primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .controls .primary:hover:not(:disabled) {
+    background: #fbbf24;
+    border-color: #fbbf24;
+    color: var(--bg);
+  }
+  .controls .speed { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .controls select {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 3px;
+    margin-left: 6px;
+  }
+
+  .step-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .step-bar .step-num { color: var(--muted); font-size: 12px; min-width: 90px; }
+  .step-bar .step-action {
+    flex: 1;
+    min-width: 200px;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .step-bar .step-reward {
+    font-size: 13px;
+    color: var(--green);
+    font-weight: 600;
+    min-width: 90px;
+    text-align: right;
+  }
+  .step-bar .step-reward.zero { color: var(--muted); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+  }
+  .card h2 {
+    margin: 0 0 12px 0;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    font-weight: 600;
+  }
+
+  .rubric .row {
+    display: grid;
+    grid-template-columns: 110px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .rubric .label { color: var(--muted); }
+  .rubric .bar-track {
+    background: var(--dim);
+    height: 8px;
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+  }
+  .rubric .bar-fill {
+    height: 100%;
+    background: var(--green);
+    width: 0%;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .rubric .bar-fill.zero {
+    background: var(--dim);
+  }
+  .rubric .num {
+    text-align: right;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .rubric .total-row {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 110px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+  }
+  .rubric .total-row .label {
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .rubric .total-row .num {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 18px;
+  }
+  .rubric .total-track { background: var(--dim); height: 12px; border-radius: 1px; overflow: hidden; }
+  .rubric .total-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--accent));
+    width: 0%;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .trace {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .trace .item {
+    padding: 8px 10px;
+    border-left: 2px solid var(--border);
+    margin-bottom: 6px;
+    font-size: 12px;
+    background: transparent;
+    transition: all 0.2s ease;
+  }
+  .trace .item.pending { color: var(--muted); }
+  .trace .item.active {
+    border-left-color: var(--accent);
+    background: var(--panel-2);
+    color: var(--accent);
+  }
+  .trace .item.done {
+    border-left-color: var(--green);
+    color: var(--text);
+  }
+  .trace .item.done.zero {
+    border-left-color: var(--dim);
+    color: var(--muted);
+  }
+  .trace .item .marker { color: inherit; margin-right: 6px; }
+  .trace .item .op { color: var(--blue); font-weight: 600; }
+  .trace .item.done.zero .op { color: var(--muted); }
+  .trace .item .args { color: var(--muted); }
+  .trace .item .delta { float: right; color: var(--green); }
+  .trace .item .delta.zero { color: var(--muted); }
+
+  .summary-card {
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+  }
+  .summary-card .row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .summary-card .row .k { color: var(--muted); }
+  .summary-card .row .v { color: var(--text); }
+  .summary-card .row.headline {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .summary-card .row.headline .v { color: var(--accent); font-weight: 600; }
+
+  .footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .footer code {
+    background: var(--panel);
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 11px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-size: 10px;
+    margin-left: 8px;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+  .badge.easy { background: #14532d; color: #86efac; }
+  .badge.hard { background: #7c2d12; color: #fdba74; }
+  .badge.fail { background: #7f1d1d; color: #fca5a5; }
+
+  .pill {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 10px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>// INCIDENT COMMANDER</h1>
+    <div class="subtitle">OpenEnv multi-agent incident-response environment — demo replay</div>
+    <div class="meta">
+      Three deterministic episodes proving the rubric discriminates structurally. See
+      <code style="background:#131820;padding:1px 4px;border-radius:2px;color:#f59e0b">demo/PITCH.md</code>
+      for the 2-min pitch script · API at <a href="/docs">/docs</a> · validated at
+      <a href="/health">/health</a>
+    </div>
+  </header>
+
+  <section class="episodes-tabs" id="episodes-tabs"></section>
+
+  <div class="controls">
+    <button id="btn-play" class="primary">▶ Play</button>
+    <button id="btn-pause" disabled>❚❚ Pause</button>
+    <button id="btn-step" disabled>⏵ Step</button>
+    <button id="btn-restart">⟲ Restart</button>
+    <span class="speed">
+      Speed
+      <select id="speed">
+        <option value="1500">0.5×</option>
+        <option value="900" selected>1×</option>
+        <option value="500">2×</option>
+        <option value="200">5×</option>
+      </select>
+    </span>
+  </div>
+
+  <div class="step-bar">
+    <span class="step-num" id="step-num">step 0 / 0</span>
+    <span class="step-action" id="step-action">— ready —</span>
+    <span class="step-reward" id="step-reward">+0.00</span>
+  </div>
+
+  <div class="grid">
+    <div class="card rubric">
+      <h2>RUBRIC BREAKDOWN</h2>
+      <div id="rubric-rows"></div>
+      <div class="total-row">
+        <span class="label">TOTAL</span>
+        <div class="total-track"><div class="total-fill" id="total-fill"></div></div>
+        <span class="num" id="total-num">0.000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>ACTION TRACE</h2>
+      <div class="trace" id="trace"></div>
+    </div>
+  </div>
+
+  <div class="summary-card">
+    <div class="row">
+      <span class="k">Task</span>
+      <span class="v" id="meta-task">—</span>
+    </div>
+    <div class="row">
+      <span class="k">Seed</span>
+      <span class="v" id="meta-seed">—</span>
+    </div>
+    <div class="row">
+      <span class="k">Fault mitigated</span>
+      <span class="v" id="meta-mitigated">—</span>
+    </div>
+    <div class="row">
+      <span class="k">Max blast radius</span>
+      <span class="v" id="meta-blast">—</span>
+    </div>
+    <div class="row headline">
+      <span class="k">Final score</span>
+      <span class="v" id="meta-final">—</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <strong>Why this matters:</strong> Episode 2 (hard oracle) and Episode 3 (hard, easy-task playbook)
+    score <code>0.855</code> vs <code>0.479</code> on the same task with the same six rubric
+    components. The Δ=0.375 lives entirely in three structural anti-gaming guards: <code>status_page</code>
+    on a silent-corruption incident earns 0 comms; full <code>rollback</code> is rejected by the fault
+    matcher (only <code>partial_rollback</code> fixes data corruption); MTTR follows because an unfixed
+    fault has no time-to-mitigate. <code>diagnose</code> + <code>postmortem</code> credit fully in
+    BOTH episodes — the agent knew <em>what</em> the problem was; it just didn't choose the right
+    <em>response</em>. The rubric punishes that with no LLM-as-judge anywhere.
+  </div>
+</div>
+
+<script>
+const RUBRIC_KEYS = ["containment", "mttr", "rca", "mitigation", "comms", "postmortem"];
+const RUBRIC_WEIGHTS = {
+  containment: 0.25, mttr: 0.20, rca: 0.20, mitigation: 0.15, comms: 0.10, postmortem: 0.10
+};
+
+const state = {
+  episodes: [],
+  active: 0,
+  step: 0,            // 0 = before any action, n = after action n
+  playing: false,
+  timer: null,
+};
+
+function actionSummary(a) {
+  const parts = [];
+  if (a.service) parts.push(`service=${a.service}`);
+  if (a.role) parts.push(`role=${a.role}`);
+  if (a.mitigation) parts.push(`mitigation=${a.mitigation}`);
+  if (a.target) parts.push(`target=${a.target}`);
+  if (a.channel) parts.push(`channel=${a.channel}`);
+  if (a.cohort) parts.push(`cohort=${a.cohort}`);
+  if (a.root_cause_service) parts.push(`rcs=${a.root_cause_service}`);
+  if (a.root_cause_tag) parts.push(`rct=${a.root_cause_tag}`);
+  return parts.join(" ");
+}
+
+function badgeFor(ep, idx) {
+  if (ep.title.toLowerCase().includes("easy oracle")) return "easy";
+  if (ep.title.toLowerCase().includes("playbook") || ep.total < 0.5) return "fail";
+  if (ep.title.toLowerCase().includes("hard")) return "hard";
+  return "easy";
+}
+
+function shortTitle(ep) {
+  return ep.title.replace(/^EPISODE\s+\d+\/\d+\s+—\s+/i, "");
+}
+
+function renderTabs() {
+  const wrap = document.getElementById("episodes-tabs");
+  wrap.innerHTML = "";
+  state.episodes.forEach((ep, i) => {
+    const btn = document.createElement("button");
+    btn.className = "ep-tab" + (i === state.active ? " active" : "");
+    btn.innerHTML =
+      `<span class="ep-num">EPISODE ${i + 1}</span>` +
+      `<span class="ep-name">${shortTitle(ep)} <span class="badge ${badgeFor(ep, i)}">${badgeFor(ep, i).toUpperCase()}</span></span>` +
+      `<span class="ep-score">final score · ${ep.total.toFixed(4)}</span>`;
+    btn.onclick = () => selectEpisode(i);
+    wrap.appendChild(btn);
+  });
+}
+
+function renderRubricSkeleton() {
+  const wrap = document.getElementById("rubric-rows");
+  wrap.innerHTML = "";
+  for (const k of RUBRIC_KEYS) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      `<span class="label">${k.padEnd(11, " ")}</span>` +
+      `<div class="bar-track"><div class="bar-fill zero" id="bar-${k}"></div></div>` +
+      `<span class="num" id="num-${k}">0.000</span>`;
+    wrap.appendChild(row);
+  }
+}
+
+function renderTraceSkeleton() {
+  const wrap = document.getElementById("trace");
+  wrap.innerHTML = "";
+  const ep = state.episodes[state.active];
+  ep.actions.forEach((a, i) => {
+    const item = document.createElement("div");
+    item.className = "item pending";
+    item.id = `trace-${i}`;
+    item.innerHTML =
+      `<span class="marker">·</span>` +
+      `<span class="op">${a.op}</span>` +
+      ` <span class="args">${actionSummary(a)}</span>` +
+      `<span class="delta" id="trace-delta-${i}"></span>`;
+    wrap.appendChild(item);
+  });
+}
+
+function renderEpisodeMeta() {
+  const ep = state.episodes[state.active];
+  document.getElementById("meta-task").textContent = ep.task_id;
+  document.getElementById("meta-seed").textContent = ep.seed;
+  document.getElementById("meta-mitigated").textContent = ep.mitigated ? "yes" : "no";
+  document.getElementById("meta-blast").textContent = (ep.blast_radius_pct * 100).toFixed(2) + "%";
+  document.getElementById("meta-final").textContent = ep.total.toFixed(4) + " / 1.000";
+}
+
+function applyStep(n) {
+  const ep = state.episodes[state.active];
+  state.step = n;
+  // Step bar
+  document.getElementById("step-num").textContent = `step ${n} / ${ep.actions.length}`;
+  if (n === 0) {
+    document.getElementById("step-action").textContent = "— ready —";
+    document.getElementById("step-reward").textContent = "+0.00";
+    document.getElementById("step-reward").className = "step-reward zero";
+  } else {
+    const a = ep.actions[n - 1];
+    document.getElementById("step-action").innerHTML =
+      `<span style="color:#3b82f6;font-weight:600">${a.op}</span> <span style="color:#6b7280">${actionSummary(a)}</span>`;
+    const r = ep.step_rewards[n - 1];
+    document.getElementById("step-reward").textContent = `+${r.toFixed(3)}`;
+    document.getElementById("step-reward").className = r > 0 ? "step-reward" : "step-reward zero";
+  }
+
+  // Rubric bars: show snapshot at step n (or zeros at step 0)
+  const snap = n === 0
+    ? { containment: 0, mttr: 0, rca: 0, mitigation: 0, comms: 0, postmortem: 0, total: 0 }
+    : ep.component_history[n - 1];
+  for (const k of RUBRIC_KEYS) {
+    const earned = snap[k];
+    const max = RUBRIC_WEIGHTS[k];
+    const pct = max > 0 ? (earned / max) * 100 : 0;
+    const bar = document.getElementById(`bar-${k}`);
+    bar.style.width = pct.toFixed(1) + "%";
+    bar.className = "bar-fill" + (earned === 0 ? " zero" : "");
+    document.getElementById(`num-${k}`).textContent = earned.toFixed(4);
+  }
+  document.getElementById("total-fill").style.width = (snap.total * 100).toFixed(1) + "%";
+  document.getElementById("total-num").textContent = snap.total.toFixed(3);
+
+  // Trace items
+  ep.actions.forEach((a, i) => {
+    const el = document.getElementById(`trace-${i}`);
+    const delta = document.getElementById(`trace-delta-${i}`);
+    if (i < n - 1 || (i === n - 1 && n > 0)) {
+      const r = ep.step_rewards[i];
+      el.className = "item done" + (r === 0 ? " zero" : "");
+      el.querySelector(".marker").textContent = r > 0 ? "✓" : "·";
+      delta.textContent = r > 0 ? `+${r.toFixed(2)}` : "+0.00";
+      delta.className = r > 0 ? "delta" : "delta zero";
+    } else if (i === n - 1) {
+      el.className = "item active";
+      el.querySelector(".marker").textContent = "▶";
+    } else {
+      el.className = "item pending";
+      el.querySelector(".marker").textContent = "·";
+      delta.textContent = "";
+    }
+  });
+
+  // Button enable/disable
+  document.getElementById("btn-step").disabled = n >= ep.actions.length;
+  document.getElementById("btn-play").disabled = n >= ep.actions.length || state.playing;
+  document.getElementById("btn-pause").disabled = !state.playing;
+}
+
+function selectEpisode(i) {
+  pause();
+  state.active = i;
+  state.step = 0;
+  renderTabs();
+  renderRubricSkeleton();
+  renderTraceSkeleton();
+  renderEpisodeMeta();
+  applyStep(0);
+}
+
+function play() {
+  const ep = state.episodes[state.active];
+  if (state.step >= ep.actions.length) return;
+  state.playing = true;
+  document.getElementById("btn-play").disabled = true;
+  document.getElementById("btn-pause").disabled = false;
+  const interval = parseInt(document.getElementById("speed").value, 10);
+  state.timer = setInterval(() => {
+    if (state.step >= ep.actions.length) {
+      pause();
+      return;
+    }
+    applyStep(state.step + 1);
+  }, interval);
+}
+
+function pause() {
+  state.playing = false;
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+  const ep = state.episodes[state.active];
+  document.getElementById("btn-pause").disabled = true;
+  document.getElementById("btn-play").disabled = state.step >= ep.actions.length;
+}
+
+function stepOnce() {
+  const ep = state.episodes[state.active];
+  if (state.step < ep.actions.length) applyStep(state.step + 1);
+}
+
+function restart() {
+  pause();
+  applyStep(0);
+}
+
+document.getElementById("btn-play").onclick = play;
+document.getElementById("btn-pause").onclick = pause;
+document.getElementById("btn-step").onclick = stepOnce;
+document.getElementById("btn-restart").onclick = restart;
+
+// Bootstrap: load episodes.json, render first episode
+fetch("/web/episodes.json")
+  .then(r => {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  })
+  .then(d => {
+    state.episodes = d.episodes;
+    selectEpisode(0);
+  })
+  .catch(err => {
+    document.querySelector(".container").innerHTML =
+      `<div style="color:#ef4444;padding:24px;border:1px solid #ef4444;border-radius:4px">
+         <strong>Failed to load demo episodes.</strong><br><br>
+         Make sure the server has access to <code>demo/episodes.json</code>.
+         Error: ${err.message}
+       </div>`;
+  });
+</script>
+</body>
+</html>

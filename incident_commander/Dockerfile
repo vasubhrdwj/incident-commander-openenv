@@ -26,6 +26,10 @@ RUN if ! command -v uv >/dev/null 2>&1; then \
         mv /root/.local/bin/uvx /usr/local/bin/uvx; \
     fi
 
+# Slow PyPI/HF mirrors can time out under the default 30s budget;
+# 300s is conservative and keeps CI builds reproducible on flaky links.
+ENV UV_HTTP_TIMEOUT=300
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ -f uv.lock ]; then \
         uv sync --frozen --no-install-project --no-editable; \
