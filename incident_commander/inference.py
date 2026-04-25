@@ -101,19 +101,35 @@ def _bool(b: bool) -> str:
     return "true" if b else "false"
 
 
-SYSTEM_PROMPT = """You are an on-call Incident Commander (IC) for a simulated fintech microservices
-product. Your job: detect, diagnose, mitigate, communicate, and write a post-mortem.
+SYSTEM_PROMPT = """You are an on-call Incident Commander (IC) for a fintech microservices product.
+Job: detect → diagnose → mitigate → communicate → write a post-mortem. The episode
+ends when you call resolve, postmortem, or run out of step budget.
 
-ACTIONS (emit ONE as JSON; include exactly the fields listed for the op):
+VALID SERVICES (use exactly these names — the topology never changes):
+  api_gw, auth, payments, orders, inventory, notifications
+
+Topology shape (so you don't blame the wrong service):
+  api_gw      → fans out to auth, payments, orders
+  orders      → depends on inventory and payments  (payments outages cascade here)
+  payments    → talks to the external provider 'stripe'
+  auth, inventory, notifications  — leaves with no downstream IC concerns
+
+VALID FAULT TAGS (use exactly one of these for diagnose / postmortem):
+  bad_deploy           — recent canary or deploy spiked latency/error rate.
+  upstream_third_party — external provider (e.g. stripe) is degraded.
+  bad_integration      — our integration to an external provider is misconfigured.
+  data_corruption      — silent: dashboard healthy, audit shows anomalous migrations.
+
+ACTIONS (emit ONE as JSON; include exactly the fields listed):
 - {"op": "query_metrics", "service": "<svc>"}
 - {"op": "query_logs",    "service": "<svc>", "since_sec": 0}
-- {"op": "query_trace",   "service": "<svc>"}
-- {"op": "query_audit"}
-- {"op": "query_external_status", "target": "<provider>"}
+- {"op": "query_trace",   "service": "<svc>"}                 // or {"trace_id": "..."}
+- {"op": "query_audit"}                                       // optional: "service", "since_sec"
+- {"op": "query_external_status", "target": "stripe"}         // 'stripe' is the only provider
 - {"op": "delegate", "role": "sre|security|comms|eng_lead", "task": "<one sentence>"}
-- {"op": "mitigate", "mitigation": "rollback|partial_rollback|restart|scale|feature_flag|hold", "target": "<svc>"}
-- {"op": "communicate", "channel": "status_page|customer_email|exec_update", "message": "<short>"}
-- {"op": "diagnose", "root_cause_service": "<svc>", "root_cause_tag": "bad_deploy|upstream_third_party|data_corruption"}
+- {"op": "mitigate", "mitigation": "rollback|partial_rollback|restart|scale|feature_flag|hold", "target": "<svc-or-flag>"}
+- {"op": "communicate", "channel": "status_page|customer_email|exec_update", "message": "<short>", "cohort": "<optional cohort id>"}
+- {"op": "diagnose", "root_cause_service": "<svc>", "root_cause_tag": "<tag>"}
 - {"op": "resolve"}
 - {"op": "postmortem", "postmortem_json": {
     "summary": "<20+ char summary>",
@@ -123,15 +139,27 @@ ACTIONS (emit ONE as JSON; include exactly the fields listed for the op):
     "actions_taken": ["action 1", "action 2"]
   }}
 
-RECIPE for any incident:
- 1. Check metrics on the suspicious service.
- 2. Delegate to the SRE to correlate the signal to a recent change.
- 3. Post a short status_page update within 10 minutes of the incident.
- 4. Submit diagnose with the root cause service AND tag.
- 5. Apply the correct mitigation — for a canary regression that is "rollback".
- 6. End the episode with a postmortem containing all five required fields.
+PLAYBOOK (task-agnostic):
+ 1. Pull the relevant signal — query_metrics for visible outages,
+    query_audit for silent / dashboard-green incidents.
+ 2. Delegate to a specialist (sre for deploys, eng_lead for integrations,
+    security for data anomalies) to correlate the signal with recent changes.
+ 3. Communicate within the SLA window using the right channel:
+      - status_page  → customer-visible outages (bad_deploy, upstream_third_party,
+                        bad_integration).
+      - customer_email + cohort → silent incidents that affect a specific cohort
+                        (data_corruption).
+ 4. Diagnose with both root_cause_service AND root_cause_tag.
+ 5. Mitigate using the mitigation appropriate to the fault tag:
+      - bad_deploy           → rollback   on the affected service.
+      - upstream_third_party → hold       (no target needed; wait for provider).
+      - bad_integration      → feature_flag to the backup processor (target name
+                                like "<service>_backup_processor", or just the
+                                service name — the env accepts either).
+      - data_corruption      → partial_rollback on the affected service.
+ 6. Postmortem with all five required fields filled.
 
-Output STRICTLY one JSON object, nothing else. Do not wrap it in Markdown.
+Output STRICTLY one JSON object. No prose, no markdown fences, no commentary.
 """
 
 
@@ -226,16 +254,35 @@ Your recent action history:
 Now output the next JSON action."""
 
 
+_FENCE_OPEN_RE = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
+_FENCE_CLOSE_RE = re.compile(r"\s*```\s*$")
+_FENCE_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
+
+
 def parse_action_json(text: str) -> dict:
-    """Extract the first well-formed JSON object from the LLM's response."""
+    """Extract the first well-formed JSON object from the LLM's response.
+
+    Handles three common small-model failure modes:
+      1. raw JSON (the happy path);
+      2. JSON wrapped in a ``\u0060\u0060\u0060json … \u0060\u0060\u0060`` markdown fence;
+      3. JSON with prose preamble — fall back to first ``{`` … last ``}`` slice.
+    """
     text = text.strip()
+
+    if text.startswith("```"):
+        text = _FENCE_OPEN_RE.sub("", text)
+        text = _FENCE_CLOSE_RE.sub("", text)
+        text = text.strip()
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+
+    fence = _FENCE_BLOCK_RE.search(text)
     if fence:
         return json.loads(fence.group(1))
+
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
@@ -280,23 +327,49 @@ class PolicyFn:
 
 
 def llm_policy(llm: OpenAI, model: str) -> PolicyFn:
-    """Return a policy that calls the LLM for every step."""
+    """Return a policy that calls the LLM for every step.
+
+    Each step is allowed two attempts: a deterministic greedy decode first,
+    then a higher-temperature retry if the greedy output failed to parse or
+    validate. The retry is fed the parser's error message so the model can
+    self-correct (a single re-prompt closes most format-failure modes on
+    small base models, per the Phase 1 fix in the recovery plan).
+    """
 
     def _call(obs: ICObservation, history: list[str]) -> ICAction:
         user = render_observation(obs, history)
-        resp = llm.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.1,
-            max_tokens=600,
-            stream=False,
-        )
-        content = resp.choices[0].message.content or ""
-        raw = parse_action_json(content)
-        return dict_to_action(raw)
+        messages: list[dict] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ]
+        last_exc: Optional[Exception] = None
+        for attempt in range(2):
+            resp = llm.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.0 if attempt == 0 else 0.4,
+                max_tokens=1024,
+                stream=False,
+            )
+            content = resp.choices[0].message.content or ""
+            try:
+                return dict_to_action(parse_action_json(content))
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 0:
+                    messages = messages + [
+                        {"role": "assistant", "content": content},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Your previous output was not a valid action: {exc}. "
+                                "Output exactly one JSON object matching the action grammar. "
+                                "No markdown, no commentary."
+                            ),
+                        },
+                    ]
+        # Both attempts failed — surface the last parse error to the caller.
+        raise last_exc if last_exc is not None else RuntimeError("llm_policy: unreachable")
 
     return PolicyFn(fn=_call)
 

@@ -45,6 +45,11 @@ training = [
     "bitsandbytes>=0.43.0",
     "trl>=0.9.0,<0.14.0",
     "unsloth",
+    # plot_metrics.py is imported at the end of every train run and at the top
+    # of train_sft_colab.ipynb cell 7 — without matplotlib the whole job's
+    # diagnostic output is lost even when training succeeds. Pin a permissive
+    # lower bound so we get a recent enough Agg backend.
+    "matplotlib>=3.7",
 ]
 
 [project.scripts]
