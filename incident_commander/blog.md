@@ -14,7 +14,7 @@ We've watched the LLM space chase coding evals, math benchmarks, and reasoning l
 
 The idea for this env crystallized over a late-night Teams call before the hackathon kicked off. We'd been firefighting P1s in production and reading the Cloudflare and AWS post-mortems from earlier in the month. The shared observation was simple: the cognitive shape of the IC role — *observe → decide → commit → communicate → reflect*, all under a clock — looked exactly like a long-horizon RL environment that no one had built yet.
 
-![IC UI](https://github.com/vasubhrdwj/blog_assets/incident_commander_UI.png)
+![IC UI](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/incident_commander_UI.png)
 
 The Incident Commander OpenEnv environment puts an agent into a fintech outage with a 6-service graph, four specialist NPCs (SRE, Security, Comms, Eng Lead), and three different fault templates. The agent gets logs, metrics, traces, audit events, and external-status feeds — but only when it asks for them, and asking burns a step. The reward is a six-component rubric that scores containment, MTTR, root-cause attribution, mitigation correctness, comms SLA, and post-mortem quality. **No LLM judge anywhere.** Everything is programmatic.
 
@@ -98,19 +98,19 @@ The result on the third try:
 
 The trade we made: spend the easy task's 0.20 of headroom (still left at 0.76, comfortably above oracle on most criteria) to unlock +0.55 on the task that mattered. That's a strictly positive trade in macro-mean terms and a *much* better story.
 
-![SFT pre vs post per task — easy 0.96 → 0.76, medium 0.77 → 0.79, hard 0.35 → 0.89](assets/sft_pre_post.png)
+![SFT pre vs post per task — easy 0.96 → 0.76, medium 0.77 → 0.79, hard 0.35 → 0.89](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_pre_post.png)
 
 > The bar chart above is the headline visual. Hard (the rightmost pair) is where the real learning happened — the green bar more than doubles the grey one. Easy regressed because multi-task LoRA bled into a task that was already at the prompt-driven ceiling; medium held flat because Phase-1 prompt fixes already had it near-solved.
 
 Loss curve was monotonic and clean — no spikes, no plateaus, just successful memorization of a deliberately-simplified target:
 
-![SFT training loss — descends smoothly from 2.7 to ~2.0 over 9 logged steps](assets/sft_loss.png)
+![SFT training loss — descends smoothly from 2.7 to ~2.0 over 9 logged steps](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_loss.png)
 
 > NLL bottoms near 2.0 (vs 1.5 from the prior failed run on the longer postmortem). That's the postmortem-simplification working: the shorter target produces a cleaner fit because the model can actually copy it. The clean curve shape — no oscillation, no spike — is what you want to see before trusting the eval numbers.
 
 Component-level breakdown shows **where** the gain came from. On hard, RCA went from 0.00 → 0.20 (full credit), mitigation 0.00 → 0.15 (full credit), postmortem held at full 0.10 — the simplified-postmortem fix did exactly what it was supposed to.
 
-![SFT component breakdown — hard task gains full RCA + mitigation credit](assets/sft_components.png)
+![SFT component breakdown — hard task gains full RCA + mitigation credit](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_components.png)
 
 > The hard-task panel (rightmost) is the cleanest evidence of what training did. Pre-training, the hard task's RCA and mitigation components were both 0.00 — the model literally never picked the right root cause or right mitigation. Post-training, both are at the maximum weighted contribution (0.20 and 0.15). The other components (containment, MTTR, comms) didn't all hold, which is honest: SFT taught the *decision*, not the timing.
 
@@ -122,15 +122,15 @@ The safeguard mattered. An earlier RFT-on-SFT attempt collapsed catastrophically
 
 This time the run worked.
 
-![RFT-on-SFT training loss across 2 iterations — descends from 0.30 to 0.21](assets/training_loss.png)
+![RFT-on-SFT training loss across 2 iterations — descends from 0.30 to 0.21](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/training_loss.png)
 
 > Two-iteration RFT loss curve. The descent from 0.30 → 0.21 is small in absolute terms but matters: the trained model is fitting better against its own top-K rollouts each iteration. Compare to the original RFT-on-base run that bottomed at 0.02 — that was the model fully memorizing degenerate trajectories. Here the curve says "modest, healthy update."
 
-![RFT reward over training — kept-mean stable at ~0.88, all-rollouts mean rises slightly](assets/training_reward.png)
+![RFT reward over training — kept-mean stable at ~0.88, all-rollouts mean rises slightly](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/training_reward.png)
 
 > Three series: grey is the mean of *all* 12 rollouts per iteration, green is the mean of the top-K kept (the rollouts we actually train on), amber is the best-of-batch. The kept-mean staying flat at ~0.88 across both iterations is the sign that the require_done filter held — only quality trajectories made it to the training set. The all-rollouts mean creeping up from ~0.66 to ~0.71 says the policy is genuinely improving on average sampling, not just on its best draws.
 
-![Component comparison — baseline 0.620 vs trained 0.810](assets/component_comparison.png)
+![Component comparison — baseline 0.620 vs trained 0.810](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/component_comparison.png)
 
 > Baseline total 0.620, trained total 0.810 — Δ = +0.190 on the same eval seeds. The dashed line is the pre-training mean across all three tasks; the solid line is the post-training mean. The bars are the rubric weights (each component's max possible contribution to the total) — they sum to 1.0, which calibrates how much of the gap to closure is left.
 
@@ -147,7 +147,7 @@ Combined journey from base to final:
 
 > **Reproducibility note:** Exact numbers per re-run may vary by ±0.05 on a different T4 due to GPU non-determinism in matmul kernels and sampling RNG state; the magnitude and direction of the gains are stable. The committed `training/sft_metrics.json` and `training/rft_on_sft_metrics.json` are the canonical references; the Colab notebook reproduces the pipeline, not the bit-identical floats.
 
-![Results / training curves — replace file or path as needed](./blog_assets/02-training-results.png)
+![Results / training curves — replace file or path as needed](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/score_summary.png)
 
 ## What we actually learned
 
