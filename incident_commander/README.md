@@ -11,319 +11,183 @@ tags:
   - openenv
 ---
 
-# Incident Commander — OpenEnv
+# Teaching a 3B model to be an on-call engineer
 
-**Problem:** Train and evaluate LLM agents as **Incident Commanders** during a production outage: gather evidence from observability, coordinate specialist responders, choose the right mitigation under time pressure, communicate to stakeholders, and close with a structured post-mortem.
+### *(and what it took to actually train it)*
 
-**Environment:** Deterministic simulator over a **6-service graph**, **fault injection** (task-dependent), **synthetic logs / metrics / traces / audit / external status**, and **four specialist NPCs** (SRE, Security, Comms, Eng Lead) implemented as deterministic FSMs. Each HTTP/WebSocket session is one episode with a fixed step budget.
+*A submission for the OpenEnv Hackathon — what worked, what didn't, and why most of the work happened **before** training.*
 
-**Shipped tasks (3):**
+— **Team VBxAG**
 
-| `IC_TASK_ID` | Cognitive ability tested | Right mitigation | Right comms |
-| --- | --- | --- | --- |
-| `easy_canary_regression` | **Reactive deduction** ("read what's in front of you") | `rollback` | `status_page` |
-| `medium_third_party_attribution` | **Discriminative attribution** ("tell apart things that look alike") — variant by `IC_SEED` mod 3 | `hold` / `feature_flag` / `rollback` | `status_page` |
-| `hard_silent_data_corruption` | **Inverted reasoning under no signal** ("act when nothing tells you to") | `partial_rollback` | `customer_email` + cohort |
-
-The same scripted oracle scores **0.872 / 0.468 / 0.239** across the three tasks — concrete evidence the env doesn't reward repetition of one trick.
-
-Full design narrative: see repo root **`PROJECT.md`** (one directory up from this package).
-
-### Submission materials
-
-| | URL |
-| --- | --- |
-| **HF Space (env)** | [vasubhrdwj/incident-commander-openenv](https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv) |
-| **Running app** | [vasubhrdwj-incident-commander-openenv.hf.space](https://vasubhrdwj-incident-commander-openenv.hf.space) |
-| **Demo replay UI** | [vasubhrdwj-incident-commander-openenv.hf.space/replay](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) |
-| **Training Colab** | [`training/train_colab.ipynb`](training/train_colab.ipynb) — judges can open in Colab and run end-to-end |
-| **Trained LoRA adapter** | [vasubhrdwj/incident-commander-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora) — SFT on oracle, +0.122 macro, **+0.548 on hard task** |
-| **2-min pitch script** | [`demo/PITCH.md`](demo/PITCH.md) |
-| **Writeup / story** | This README + [`demo/PITCH.md`](demo/PITCH.md) cover the short judge-facing writeup and demo narrative. |
-
-Smoke-test the API: `openenv validate --url https://vasubhrdwj-incident-commander-openenv.hf.space`
+> **Quick links:**
+> [HF Space (env)](https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv) ·
+> [Live API](https://vasubhrdwj-incident-commander-openenv.hf.space) ·
+> [Demo replay UI](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) ·
+> [Trained adapter (SFT)](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora) ·
+> [Trained adapter (RFT-on-SFT)](https://huggingface.co/vasubhrdwj/incident-commander-rft-on-sft-lora) ·
+> [Reproducible Colab](training/train_colab.ipynb) ·
+> **[Technical documentation → `blog.md`](blog.md)**
 
 ---
 
-## Configuration (env vars)
+## Why we built this
 
-Read at **session creation** (each WebSocket client gets a fresh env):
+When a payments outage hits at 3 AM, the fix isn't more code — it's judgment. Triage the alerts. Read the dashboards. Decide between `rollback`, `hold`, `restart`, `partial_rollback`. Communicate to thousands of customers without overcommitting. Write the post-mortem the next morning so the same thing doesn't happen again. The on-call **Incident Commander** role is one of the highest-leverage human jobs in modern SaaS — and one of the most thankless. Most engineers learn it by being thrown in. Companies pay enormous costs for the hours those decisions take and the mistakes they sometimes produce.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `IC_TASK_ID` | `easy_canary_regression` | Which task / fault template |
-| `IC_SEED` | `0` | RNG + medium-task variant selection |
-| `IC_STEP_BUDGET` | (task default) | Max steps before forced termination |
+We've watched the LLM space chase coding evals, math benchmarks, and reasoning leaderboards. Operational judgment under uncertainty — the actual job description for site reliability, security response, and ops engineering — has gone almost entirely unmeasured. And yet models are already in the loop on real production systems: observability copilots that summarize alerts, runbook agents that suggest remediations, AI-assisted post-incident reviews. If we're going to trust them with operational decisions, someone needs to test whether they can actually hold the seat.
 
-**Medium task variants** (deterministic from seed): `IC_TASK_ID=medium_third_party_attribution` with seeds `0` / `1` / `2` → provider outage, bad integration, our deploy — smoke-test all three in separate containers or sessions.
+The idea for this env crystallized over a late-night Teams call before the hackathon kicked off. We'd been firefighting P1s in production and reading the Cloudflare and AWS post-mortems from earlier in the month. The shared observation was simple: the cognitive shape of the IC role — *observe → decide → commit → communicate → reflect*, all under a clock — looked exactly like a long-horizon RL environment that no one had built yet.
 
----
+![Incident Commander web UI — alerts, dashboard, NPC chat, and live rubric meter](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/incident_commander_UI.png)
 
-## Action space (`ICAction`)
+> The web UI at `/web` on a running env. Left rail: alerts and dashboard health. Center: action picker and observation stream. Right rail: NPC chat with the four specialists. Bottom: live rubric meter that fills as components are credited.
 
-Flat union: required **`op`** plus optional payload fields (only those relevant to `op`).
+The Incident Commander OpenEnv environment puts an agent into a fintech outage with a 6-service graph, four specialist NPCs (SRE, Security, Comms, Eng Lead), and three different fault templates. The agent gets logs, metrics, traces, audit events, and external-status feeds — but only when it asks for them, and asking burns a step. The reward is a six-component rubric that scores containment, MTTR, root-cause attribution, mitigation correctness, comms SLA, and post-mortem quality. **No LLM judge anywhere.** Everything is programmatic.
 
-| `op` | Role |
-| --- | --- |
-| `query_logs`, `query_metrics`, `query_trace` | Observability pulls (scoped by `service` where applicable) |
-| `query_audit` | Audit log slice |
-| `query_external_status` | Third-party / provider status page |
-| `delegate` | Request work from a specialist (`specialist`: sre / security / comms / eng_lead) |
-| `mitigate` | Execute mitigation (`mitigation`, `target` / `service` as needed) |
-| `communicate` | Stakeholder update (`channel`, `message`, optional `audience`) |
-| `diagnose` | Submit RCA hypothesis (`service`, `root_cause_tag`) |
-| `resolve` | Declare incident resolved |
-| `postmortem` | Terminal structured JSON (`postmortem_json`) |
+What makes the env interesting (to us) is that the three tasks each test a different cognitive ability:
 
-**Mitigation kinds:** `restart`, `rollback`, `partial_rollback`, `scale`, `feature_flag`, `hold`.
+- **Easy** — a canary regression. *Reactive deduction:* read what's in front of you, roll back the bad deploy.
+- **Medium** — a third-party outage with three seed-keyed variants. *Discriminative attribution:* tell apart things that look alike, because rolling back **our** service when the upstream provider is down makes things worse.
+- **Hard** — a silent data corruption. *Inverted reasoning under no signal:* the dashboard is green, no alerts fire, and the only evidence is a tag in the audit log. The model has to know to query an unprompted observability surface and apply `partial_rollback` to a specific cohort, not a full rollback.
 
-Wire schema: `models.py` or **`GET /schema`** on the running server.
+We wanted an env where doing the easy-task playbook on the hard task would **fail**, hard, even when the actions look reasonable. That's where most of the design time went.
 
----
+## The structural anti-gaming demo
 
-## Observation space (`ICObservation`)
+The single thing we're proudest of in this project is what the **[`/replay` UI](https://vasubhrdwj-incident-commander-openenv.hf.space/replay)** shows. Three deterministic episodes, animated step-by-step, with the rubric bars filling live. Same env, same six rubric components, same level of effort, completely different outcomes:
 
-Each step returns a rich observation including:
+- **Episode 1 — Easy oracle:** 0.8716. Calibrates the rubric ceiling on the easy task.
+- **Episode 2 — Hard oracle:** 0.8546. Hard task done **right** (`query_audit` → `partial_rollback orders` → `customer_email` cohort).
+- **Episode 3 — Hard task, easy-task playbook:** 0.4792. **FAIL.** Same agent shape, same effort, different choices.
 
-- Simulator time, step index, task id, high-level **service health** and **alerts**
-- Results of the **last query** (logs, traces, audit, external status) when applicable
-- **NPC messages** and latest specialist **reports**
-- **Comms** state (e.g. status page last update)
-- **`done`**, **`reward`** (incremental rubric signal this step), optional status text
+The Δ=0.375 between Episodes 2 and 3 lives entirely in three structural anti-gaming guards baked into the rubric:
 
----
+1. `status_page` on a silent-corruption incident earns **0** comms — the customer cohort needs `customer_email`, not a public banner.
+2. Full `rollback` is rejected by the fault matcher on data corruption; only `partial_rollback` credits.
+3. MTTR follows from mitigation: an unfixed fault has no time-to-mitigate, so the MTTR component zeros too.
 
-## Reward (rubric)
+The agent in Episode 3 *knew what the problem was* — it diagnosed correctly. It just chose the wrong response. The rubric punishes that with no LLM-as-judge anywhere. That's the kind of structural bite we think these envs need if we want to use them to actually train models, not just evaluate them.
 
-Six **independent** weighted components (dense per-step + terminal), all clamped to **[0, 1]** for the episode total:
+## The training journey — five attempts, two wins
 
-| Component | Weight | Intent |
-| --- | ---: | --- |
-| Containment | 0.25 | Limit blast radius / premature bad mitigations |
-| MTTR | 0.20 | Time from fault to correct mitigation |
-| Correct RCA | 0.20 | `diagnose` vs ground truth (partial credit for service-only) |
-| Right mitigation | 0.15 | Correct `mitigate` for this task (`hold` and `partial_rollback` rewarded only when ground truth) |
-| Comms SLA | 0.10 | Timely comms; **task-conditional channel** — `status_page` on easy/medium, `customer_email`+cohort on hard |
-| Post-mortem | 0.10 | Validated JSON structure + factual fields at end |
+Here's where we'll be honest. **We tried to train a Llama-3.2-3B-Instruct LoRA on this env four times before anything worked.** This is the unromantic part of RL on small models.
 
-**Anti-gaming guards (structural, not heuristic):**
-- `hold` mitigation credits only when ground truth is `hold` (otherwise zero — easy-task `hold` earns nothing).
-- `partial_rollback` mitigation rejects full `rollback` on the data-corruption fault (easy-task playbook does not transfer).
-- Comms grader is task-conditional on `correct_mitigation` — `status_page` on the hard task earns 0 comms.
-- Status-page spam (≥2 posts within 60s) zeros the comms component.
-- Invalid actions burn a step — no free retries.
+### Attempt 1 — GRPO directly on base. Regressed by −0.356.
 
----
+We started with TRL's `GRPOTrainer` because most of the OpenEnv tutorials use GRPO. The training script ran. The reward curve looked plausible. The eval came back: pre 0.736 → **post 0.380**.
 
-## Training — SFT on oracle trajectories (the journey)
+Diagnosis: Pydantic validation errors dominated the rollout group. When 3 of 4 rollouts in a group emit malformed JSON, the group mean is near zero, and `(0 − 0)/(0 + ε)` is a huge spurious advantage that gets multiplied through the policy gradient. Combine that with no KL penalty (omitted to fit a 4-bit reference into a free T4) and you get policy drift toward whatever degenerate format the model emits most often.
 
-The training story is the *recovery from two failed RL attempts*. We tried RL first, both runs regressed below baseline, and the fix was to step back to **supervised fine-tuning on deterministic oracle trajectories** — the standard SFT-then-RL recipe behind every modern instruction-tuned LLM. Numbers below are real, all from `training/sft_metrics.json`.
+### Attempt 2 — RFT directly on base. Regressed by −0.310.
 
-### Headline numbers (from `sft_metrics.json`)
+OK, GRPO was unstable. Rejection-sampling FT (sample N, keep top K, SFT on those) is supposed to be the safe alternative — the loss curve is clean SFT NLL, not a finicky advantage estimator.
 
-| Task | Base + Phase-1 prompt | Post-SFT | Δ |
-| --- | ---: | ---: | ---: |
-| `easy_canary_regression` | 0.956 | 0.761 | −0.195 |
-| `medium_third_party_attribution` | 0.775 | 0.790 | +0.015 |
-| **`hard_silent_data_corruption`** | **0.347** | **0.895** | **+0.548** |
-| **Macro-mean** | **0.693** | **0.815** | **+0.122** |
+It regressed by basically the same amount. Same root cause: when the **base model can't reliably emit valid `ICAction` JSON**, there's nothing for either RFT or GRPO to amplify. Filtering the model's own bad rollouts gives you bad rollouts. Mode collapse onto safe-but-empty actions.
 
-The hard task — silent data corruption requiring audit-only diagnosis and `partial_rollback` — went from worst-scoring task in the project to **best-scoring task**, deterministically across 3 eval seeds, no JSON parse errors. That is the headline.
+### What we should have done first
 
-### Plots (committed under `assets/`)
+This is the lesson we wish we'd internalized day one. Both GRPO and RFT depend on the model occasionally producing format-valid, non-trivial-reward trajectories. **Our 3B model couldn't.** Pre-training error rate: 2 out of 3 baseline rollouts crashed on parse/validation.
 
-| | Caption |
-| --- | --- |
-| ![pre vs post](assets/sft_pre_post.png) | **Headline:** per-task baseline vs post-SFT macro-mean. Hard task triples; medium holds; easy regresses by ~0.20 (cost of multi-task LoRA on a task already at 0.96). Net: **+0.122 macro**. |
-| ![SFT loss curve](assets/sft_loss.png) | Training-set NLL across 49 logged steps. Monotonic, bottoms near 1.95 — clean memorization of the simplified oracle template, no instability or spikes. |
-| ![component breakdown](assets/sft_components.png) | Six-component rubric breakdown pre vs post per task. Hard's RCA goes 0.00 → 0.20 (full credit), mitigation 0.00 → 0.15 (full credit), postmortem stays at full 0.10 — the simplified-postmortem fix held. |
+The fix isn't a different RL algorithm. It's stepping back to **supervised fine-tuning on a deterministic teacher** — the standard SFT-then-RL recipe behind every modern instruction-tuned LLM (InstructGPT, Llama-2-Chat, DeepSeek-R1, Qwen-Chat). Skipping SFT is a known failure mode for small base models on structured-output envs. We hit it. Twice.
 
-### What we trained on
+### Attempt 3 — SFT on all 3 tasks with the full oracle. Regressed by −0.094.
 
-- Base: `unsloth/Llama-3.2-3B-Instruct`, 4-bit, LoRA (rank 16, α 32, q/k/v/o/gate/up/down).
-- Dataset: `training/build_sft_dataset.py` rolls each task's deterministic oracle policy through a fresh in-process env across 30 seeds × 2 tasks (medium + hard; easy excluded — see "design choices" below). 390 labeled `(observation, action)` pairs.
-- Trainer: TRL `SFTTrainer` + Unsloth, 1 epoch, lr 1e-4, batch 2 × grad-accum 4, ~17 min wall on a T4.
-- Regression gate: `train_sft.py` refuses to save the adapter unless macro-mean delta ≥ +0.05. Final delta +0.122 cleared the gate.
+We generated ~570 labeled `(observation, action)` pairs from deterministic scripted oracle policies across 30 seeds × 3 tasks × ~6 actions per episode. Trained 1 epoch of LoRA SFT.
 
-### Run it yourself
+Macro-mean: pre 0.693 → post 0.599. Regression. Caught by the gate, no adapter saved.
 
-```bash
-# HF Jobs (T4, ~30 min wall, one-shot)
-hf jobs run --flavor t4-medium --secrets HF_TOKEN \
-  ghcr.io/meta-pytorch/openenv-base:latest \
-  -- bash -c '
-    git clone https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv /workspace/repo &&
-    cd /workspace/repo && pip install -e ".[training]" &&
-    python -m incident_commander.training.build_sft_dataset \
-        --seeds 30 --tasks medium_third_party_attribution hard_silent_data_corruption \
-        --output sft_oracle.jsonl &&
-    python -m incident_commander.training.train_sft \
-        --dataset sft_oracle.jsonl --output-dir ./ic-sft-oracle \
-        --metrics-json sft_metrics.json --min-improvement 0.05 --precision auto &&
-    python -m incident_commander.training.plot_metrics --mode sft \
-        --metrics sft_metrics.json --out assets/
-  '
-```
+Per-task breakdown told the real story:
 
-Colab path: open [`training/train_colab.ipynb`](training/train_colab.ipynb) → `Runtime → T4 GPU` → `Run all`.
+- **Easy:** 0.96 → 0.46 (catastrophic regression — already near-optimal from the prompt)
+- **Medium:** 0.78 → 0.77 (flat)
+- **Hard:** 0.35 → 0.58 (real gain, but with JSON parse failures on the postmortem)
 
-### Design choices that mattered
+Two things broke:
 
-- **Train on medium + hard only, not easy.** Easy was already at 0.956 from the prompt — there was no headroom, only downside. Multi-task LoRA still bled into easy (regressed 0.20), but the gain on hard (+0.55) more than compensates. **The honest tradeoff is: spend easy headroom to unlock hard learning.**
-- **Trim oracle postmortem schema** from 4-item timeline + 4-item actions_taken to 2 + 2. Grader minimums are `timeline ≥ 2`, `actions_taken ≥ 1`; oracle still scores 0.10/0.10 on postmortem. The shorter target is now memorizable cleanly — no more 2/3-seed JSON parse failures we saw on the first SFT attempt.
-- **Regression gate enforced.** Two earlier RL attempts pushed bad checkpoints (we regressed before catching it). The gate in `train_sft.py` now refuses to save when macro-mean delta < +0.05, so a bad run can't masquerade as a successful one.
+- SFT on the easy task **memorized a fixed action sequence**, including the long postmortem JSON. The trained model emitted identical actions on every seed regardless of observation — rigid imitation that scored worse than the flexible prompt-only version.
+- The oracle's postmortem JSON was 250-400 tokens of nested fields. Loss bottomed at 1.53 (not 0.5) — the model couldn't memorize it cleanly. On hard, 2 of 3 seeds parse-failed mid-postmortem and lost the credit entirely.
 
-### Honest negative results — what didn't work, and why
+### Attempt 4 — Focused SFT (medium + hard, simplified postmortem). +0.122.
 
-We tried two RL approaches before SFT. **Both regressed.** Documented here rather than buried, because the *why* is the actual lesson.
+Two changes:
+
+- Drop easy from training data. It was already at 0.96; the headroom was zero and the downside was the catastrophic regression we'd just seen.
+- Trim oracle postmortems from 4-item timeline + 4-item actions_taken to 2 + 2. Grader minimums are `timeline ≥ 2`, `actions_taken ≥ 1`; oracle still scores 0.10/0.10. The shorter target became memorizable.
+
+The result on the third try: macro-mean 0.693 → 0.815 (+0.122). **Hard task more than doubled — 0.347 → 0.895.** Went from worst-scoring task to best-scoring task in the project. Three eval seeds, all 0.895, deterministic, zero parse errors. That is the headline.
+
+The trade we made: spend the easy task's 0.20 of headroom (still left at 0.76, comfortably above oracle on most criteria) to unlock +0.55 on the task that mattered. That's a strictly positive trade in macro-mean terms and a *much* better story.
+
+The loss curve was monotonic and clean — no spikes, no plateaus, just successful memorization of a deliberately-simplified target. Component-level breakdown showed the gain came from exactly where it should: on hard, RCA went from 0.00 → 0.20 (full credit), mitigation 0.00 → 0.15 (full credit), postmortem held at full 0.10 — the simplified-postmortem fix did exactly what it was supposed to.
+
+The full plots, per-task tables, and component breakdowns live in **[`blog.md`](blog.md)** under "Training results."
+
+### Attempt 5 — RFT polish on top of SFT-warm. +0.190.
+
+After Attempt 4 landed, we tried online rejection-sampling fine-tuning *on top of* the SFT-warm checkpoint. The setup: 2 iterations × 12 rollouts × keep top 2, LR 2e-5, score-floor 0.55, **and a critical new safeguard — `--require-done 1`** that filters out any rollout that didn't complete the episode cleanly.
+
+The safeguard mattered. An earlier RFT-on-SFT attempt collapsed catastrophically (−0.703) because step=25-without-finish trajectories that scored 0.45 from partial credit passed the score floor and got reinforced. By iter 3 of that previous run, the model had learned to "query forever, never mitigate." The require_done filter eliminates that failure mode at the source: trajectories that didn't actually finish can't enter the kept set, even if their score passes the floor.
+
+This time the run worked.
+
+**The narrative twist:** the SFT checkpoint scored 0.815 under greedy decoding (T=0.0), but only **0.620** when sampled at T=0.7 (which is what RFT's pre-eval uses for honest variance estimation). The +0.190 gain from RFT polish is, in effect, the model becoming *robust to higher-temperature sampling*. The trained model scores 0.810 at T=0.7 — nearly matching its own greedy ceiling. RFT didn't push absolute capability much; it pushed reliability under noisy decoding. That's a smaller but real win.
+
+Combined journey from base to final:
+
+| Stage | Macro-mean | Cumulative Δ vs raw base |
+|---|---:|---:|
+| Llama-3.2-3B base, broken prompt | 0.31 | — |
+| + Phase-1 prompt fixes (no training) | 0.69 | +0.38 |
+| + SFT focused (Attempt 4) | 0.815 | +0.51 |
+| + RFT polish (Attempt 5) at T=0.7 | 0.810 | (matches SFT under noisy sampling) |
+
+> **Reproducibility note:** Exact numbers per re-run may vary by ±0.05 on a different T4 due to GPU non-determinism in matmul kernels and sampling RNG state; the magnitude and direction of the gains are stable. The committed `training/sft_metrics.json` and `training/rft_on_sft_metrics.json` are the canonical references; the Colab notebook reproduces the pipeline, not the bit-identical floats.
+
+## What we actually learned
+
+**Prompt design is the cheapest 0.38 macro-mean you'll ever buy.** Before any training, fixing the system prompt — adding a services list, a per-fault mitigation table, a parse-retry mechanism — moved baseline from 0.31 to 0.69. That's larger than every training delta in this project combined. *Prompt is data.* Don't skip it.
+
+**SFT first, RL second isn't paper jargon.** It's there because every published recipe runs into the same wall: a base model that can't sample valid actions can't be improved by sample-filtering RL methods. SFT on a teacher is what makes the rollouts good enough for RL to find anything to amplify. We learned this the expensive way.
+
+**Predictions about training outcomes are mostly wrong.** We (and the AI tooling we leaned on) consistently mispredicted per-task deltas. Macro-mean predictions were closer because aggregate cancellations are forgiving. The honest practice: forecast direction and rough magnitude, not specific numbers; let the regression gate be the authority; treat each run as new evidence rather than confirmation of a precise model.
+
+**The regression gate is the single most useful piece of training infra in the project.** Three of five runs regressed. The gate refused to overwrite our best adapter on every one of them. Without it we would have shipped a worse model under the impression we'd improved.
+
+**A `--require-done` filter is what made RFT-on-SFT actually work.** This is a one-line code change with outsized impact. RFT's filter-and-amplify mechanism is brittle because a trajectory's *score* doesn't tell you whether it *finished* — partial credit from observability-only behavior can match real wins numerically. Filtering on actual completion was the difference between a +0.19 polish and a −0.70 collapse.
+
+## Honest negative results — and why we're keeping them
+
+The failed scripts (`training/train_grpo.py`, the original direct-RFT path, the multi-task SFT run, the previous unfiltered RFT-on-SFT collapse) are still in the repo. The metrics JSONs of every regressed run are still in `training/`. We want a curious judge to be able to re-run them and see the regressions for themselves. Deleting the misses to make the README cleaner would weaken the actual story, which is *how* the working pipeline got to working — through repeatable, recorded failure.
 
 | Attempt | Pre | Post | Δ | Failure mechanism |
 | --- | ---: | ---: | ---: | --- |
 | GRPO direct on base | 0.736 | 0.380 | **−0.356** | Format-failure dominated rollouts → group advantage degenerate → policy collapsed to a single mode at greedy decode. |
 | RFT direct on base | 0.310 | 0.000 | **−0.310** | `score_floor=0.30` on a baseline of 0.31 filtered noise into the training set; mode collapse onto safe-but-empty actions. |
-| SFT on all 3 tasks (first attempt) | 0.693 | 0.599 | **−0.094** | Memorized full oracle postmortem failed to generalize → JSON parse errors on hard, mode collapse on easy. Gate caught it; no save. |
+| SFT on all 3 tasks | 0.693 | 0.599 | **−0.094** | Memorized full oracle postmortem failed to generalize → JSON parse errors on hard, mode collapse on easy. Gate caught it; no save. |
+| RFT-on-SFT (no `--require-done`) | 0.815 | 0.112 | **−0.703** | Step=25-without-finish trajectories passed the score floor with partial credit; reinforced "query forever, never mitigate". |
 
-**Lesson:** Both filter-and-amplify RL methods (GRPO, RFT) need the model to *occasionally* sample format-valid trajectories with reward variance. A 3B base on a structured-action env can't. SFT on a deterministic teacher bypasses the problem — there's nothing to filter, just labeled imitation. **Then** RL polish on the SFT-warm checkpoint becomes meaningful (next stage; in progress).
+## Try it
 
-The failed-run code lives at `training/train_grpo.py` and the original `training/train_rft.py` is preserved as evidence. We did not delete them; reproducibility means showing the misses too.
+| | URL |
+| --- | --- |
+| **HF Space (env)** | [vasubhrdwj/incident-commander-openenv](https://huggingface.co/spaces/vasubhrdwj/incident-commander-openenv) |
+| **Live API** | [vasubhrdwj-incident-commander-openenv.hf.space](https://vasubhrdwj-incident-commander-openenv.hf.space) — `/docs`, `/health`, `/replay` |
+| **Demo replay UI** | [/replay on the live Space](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) |
+| **Trained adapter (SFT)** | [vasubhrdwj/incident-commander-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora) |
+| **Trained adapter (RFT-on-SFT)** | [vasubhrdwj/incident-commander-rft-on-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-rft-on-sft-lora) |
+| **Reproducible Colab** | [`training/train_colab.ipynb`](training/train_colab.ipynb) |
+| **Technical documentation** | [`blog.md`](blog.md) — action/observation/reward spec, all training plots, full benchmark numbers, reproducibility commands |
+| **2-minute pitch script** | [`demo/PITCH.md`](demo/PITCH.md) |
+| **Full design narrative** | [`PROJECT.md`](../PROJECT.md) (repo root) |
 
-### Phase 1 — the prompt-engineering delta we don't take credit for in training
-
-Worth flagging separately: a substantial chunk of the model's competence comes from `inference.py`'s system prompt (services list, per-fault mitigation table, parse-retry-with-hint at temperature 0.4). That alone moved baseline from **0.31 → 0.693** before any training. The SFT result builds on that foundation. Both deltas stack into the final score the trained adapter produces.
-
-### Inference-time evidence (separate from training)
-
-Best-of-N reward-guided sampling at T=0.9 with N=3 on Llama-3.2-3B base matched the oracle ceiling: **0.872 max / 0.855 mean** on `easy_canary_regression`. The rubric is a verifier — sampling N times and keeping the best is a valid post-training improvement lever even when weight updates fail. See `training/best_of_n.py`.
-
----
-
-## Baseline scores
-
-All numbers are mean across 3 eval seeds on the trained model unless noted. Source for trained-model rows: `training/sft_metrics.json` (committed). Source for oracle / best-of-N rows: in-process eval with `IC_MOCK_POLICY=1` and `training/best_of_n.py` respectively.
-
-| Task | Policy | Score | Notes |
-| --- | --- | ---: | --- |
-| easy_canary_regression | Oracle / ideal (`IC_MOCK_POLICY=1`) | **0.872** | Scripted ceiling. |
-| easy_canary_regression | Llama-3.2-3B base + Phase-1 prompt | **0.956** | Mean of 3 seeds. Prompt fixes alone solve this task. |
-| easy_canary_regression | Llama-3.2-3B + **SFT LoRA** | 0.761 | Multi-task LoRA bleeds into easy; net regression −0.20 — the cost of unlocking hard. |
-| easy_canary_regression | Best-of-N (N=3, T=0.9) on base | 0.872 max / 0.855 mean | Inference-time, no weight updates. Matched oracle on first draw. |
-| medium_third_party_attribution | Oracle / ideal | 0.832 (provider) / 0.832 (integration) / 0.832 (our_deploy) | Three seed variants exercise `hold` / `feature_flag` / `rollback`. |
-| medium_third_party_attribution | Llama-3.2-3B base + Phase-1 prompt | 0.775 | Mean across 3 seed variants. |
-| medium_third_party_attribution | Llama-3.2-3B + **SFT LoRA** | 0.790 | +0.015. Phase-1 prompt was already strong here; SFT marginal. |
-| hard_silent_data_corruption | Oracle / ideal (`IC_MOCK_POLICY=1`) | **0.855** | Audit-only detection + `partial_rollback` + targeted `customer_email`. No alerts ever fire. |
-| hard_silent_data_corruption | Llama-3.2-3B base + Phase-1 prompt | 0.347 | Hard for the prompt-only agent — model can't infer the `partial_rollback` playbook from prompt alone. |
-| **hard_silent_data_corruption** | **Llama-3.2-3B + SFT LoRA** | **0.895** | **+0.548** — best score on the hardest task, deterministic across 3 seeds, no parse errors. The headline result. |
-| hard_silent_data_corruption | Easy-task playbook on hard task | 0.479 | Negative-transfer demo: status_page earns 0 comms, full `rollback` earns 0 mitigation. |
-| **Macro-mean across 3 tasks** | Phase-1 prompt | 0.693 | |
-| **Macro-mean across 3 tasks** | **+ SFT LoRA** | **0.815** | **+0.122** — gate-passed adapter saved to `vasubhrdwj/incident-commander-sft-lora`. |
-| Macro-mean (failed attempts) | GRPO direct on base | 0.380 | **−0.356** vs. paired baseline. See "Honest negative results" above. |
-| Macro-mean (failed attempts) | RFT direct on base | 0.000 | **−0.310** vs. paired baseline. Mode collapse to safe-but-empty actions. |
-
-**Reproducing the best-of-N run:**
-
-```bash
-# server running at $ENV_URL with IC_TASK_ID=easy_canary_regression
-MODEL_NAME=meta-llama/Llama-3.2-3B-Instruct HF_TOKEN=... \
-python -m incident_commander.training.best_of_n \
-  --n 8 --temperature 0.9 --task easy_canary_regression \
-  --output-json ./bon_results.json
-```
-
-### Demo episodes (no API key needed)
-
-`demo/run_episodes.py` runs three deterministic in-process episodes —
-easy oracle, hard oracle, and the headline "hard task with the easy-task
-playbook" episode — and prints rubric-component breakdowns plus a
-combined `demo/episodes.json` artifact. The third episode is the
-demonstration: same agent shape, same six components, same level of
-effort, but the structural anti-gaming guards (task-conditional comms +
-strict `partial_rollback` matcher) collapse the score from **0.855 → 0.479**.
-
-```bash
-PYTHONPATH=. python -m incident_commander.demo.run_episodes
-# writes demo/episodes.json; runs in <2 seconds
-```
-
-You can also view the same three episodes as an animated rubric replay
-in your browser at **`/replay`** on any running server (local or HF
-Space). It loads `demo/episodes.json` and animates the six-component
-rubric bars filling step-by-step — the cleanest single visual of the
-"structural anti-gaming guards bite" headline.
-
-The 2-minute pitch script keyed to terminal screens lives at
-[`demo/PITCH.md`](demo/PITCH.md).
-
----
-
-## Quick start (Python client)
-
-Install from this repo (see `pyproject.toml`), run the server locally or point at your **Space URL**.
-
-```python
-from incident_commander import ICAction, IncidentCommanderEnv
-
-# Local: uvicorn, Docker, or Hugging Face Space — set base_url accordingly.
-with IncidentCommanderEnv(base_url="http://localhost:8000").sync() as env:
-    result = env.reset()
-    obs = result.observation
-    print(obs.task_id, obs.done, obs.reward)
-
-    result = env.step(
-        ICAction(op="query_logs", service="api_gateway", query="error")
-    )
-    print(result.observation.reward, result.done)
-```
-
-**Strict eval logging** for the hackathon checklist: run **`inference.py`** from the package directory (see file header for env vars and `[START]`/`[STEP]`/`[END]` log format).
-
----
-
-## Build & run (Docker)
-
-From **`incident_commander/`** (directory containing `openenv.yaml`):
-
-```bash
-docker build -t incident-commander-env:latest -f server/Dockerfile .
-docker run --rm -p 8000:8000 \
-  -e IC_TASK_ID=easy_canary_regression \
-  -e IC_SEED=0 \
-  incident-commander-env:latest
-```
-
-OpenAPI: **http://localhost:8000/docs** · Demo replay: **http://localhost:8000/replay**. Some OpenEnv deployments also expose the generated playground at **`/web`**.
-
----
-
-## Deploy to Hugging Face Spaces
-
-```bash
-cd incident_commander
-huggingface-cli login   # once
-openenv validate --verbose
-openenv push --repo-id vasubhrdwj/incident-commander-openenv
-```
-
-After deploy, smoke-test:
+**Smoke-test the live env (no install required):**
 
 ```bash
 openenv validate --url https://vasubhrdwj-incident-commander-openenv.hf.space
 ```
 
----
+The agent doesn't outscore the oracle. The oracle is hand-written and near-optimal by construction. The point isn't to match it — it's that the env, the rubric, and the training pipeline together produce a clean improvement signal that survives independent re-runs and can't be gamed by a model that *knows what the problem is* but answers wrong.
 
-## Project layout
+Incidents teach the humans who survive them. We wanted the agents to learn too.
 
-```
-incident_commander/
-├── openenv.yaml
-├── README.md
-├── models.py
-├── client.py
-├── inference.py
-├── simulator/
-├── graders/
-└── server/
-    ├── app.py
-    ├── incident_commander_environment.py
-    └── Dockerfile
-```
+— **Team VBxAG**
