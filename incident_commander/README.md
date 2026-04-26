@@ -38,7 +38,7 @@ We've watched the LLM space chase coding evals, math benchmarks, and reasoning l
 
 The idea for this env crystallized over a late-night Teams call before the hackathon kicked off. We'd been firefighting P1s in production and reading the Cloudflare and AWS post-mortems from earlier in the month. The shared observation was simple: the cognitive shape of the IC role — *observe → decide → commit → communicate → reflect*, all under a clock — looked exactly like a long-horizon RL environment that no one had built yet.
 
-![Incident Commander web UI — alerts, dashboard, NPC chat, and live rubric meter](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/incident_commander_UI.png)
+![Incident Commander web UI — alerts, dashboard, NPC chat, and live rubric meter](./blog_assets/incident_commander_UI.png)
 
 > The web UI at `/web` on a running env. Left rail: alerts and dashboard health. Center: action picker and observation stream. Right rail: NPC chat with the four specialists. Bottom: live rubric meter that fills as components are credited.
 
