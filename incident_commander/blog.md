@@ -14,7 +14,7 @@ We've watched the LLM space chase coding evals, math benchmarks, and reasoning l
 
 The idea for this env crystallized over a late-night Teams call before the hackathon kicked off. We'd been firefighting P1s in production and reading the Cloudflare and AWS post-mortems from earlier in the month. The shared observation was simple: the cognitive shape of the IC role — *observe → decide → commit → communicate → reflect*, all under a clock — looked exactly like a long-horizon RL environment that no one had built yet.
 
-[IC UI](https://github.com/vasubhrdwj/blog_assets/incident_commander_UI.png)
+![IC UI](https://github.com/vasubhrdwj/blog_assets/incident_commander_UI.png)
 
 The Incident Commander OpenEnv environment puts an agent into a fintech outage with a 6-service graph, four specialist NPCs (SRE, Security, Comms, Eng Lead), and three different fault templates. The agent gets logs, metrics, traces, audit events, and external-status feeds — but only when it asks for them, and asking burns a step. The reward is a six-component rubric that scores containment, MTTR, root-cause attribution, mitigation correctness, comms SLA, and post-mortem quality. **No LLM judge anywhere.** Everything is programmatic.
 
