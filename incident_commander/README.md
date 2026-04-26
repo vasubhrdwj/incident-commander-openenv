@@ -25,7 +25,7 @@ tags:
 > [Demo replay UI](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) ·
 > [Trained adapter (SFT)](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora) ·
 > [Trained adapter (RFT-on-SFT)](https://huggingface.co/vasubhrdwj/incident-commander-rft-on-sft-lora) ·
-> [Reproducible Colab](training/train_colab.ipynb) ·
+> [Reproducible Colab (SFT)](training/train_sft_colab.ipynb) ·
 > **[Technical documentation → `blog.md`](blog.md)**
 
 ---
@@ -175,7 +175,7 @@ The failed scripts (`training/train_grpo.py`, the original direct-RFT path, the 
 | **Demo replay UI** | [/replay on the live Space](https://vasubhrdwj-incident-commander-openenv.hf.space/replay) |
 | **Trained adapter (SFT)** | [vasubhrdwj/incident-commander-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora) |
 | **Trained adapter (RFT-on-SFT)** | [vasubhrdwj/incident-commander-rft-on-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-rft-on-sft-lora) |
-| **Reproducible Colab** | [`training/train_colab.ipynb`](training/train_colab.ipynb) |
+| **Reproducible Colab (SFT — judges' artifact)** | [`training/train_sft_colab.ipynb`](training/train_sft_colab.ipynb) — runs the SFT-on-oracle pipeline end-to-end on T4 in ~25 min. This is the reproducible result. `train_colab.ipynb` (RFT) and `train_grpo_colab.ipynb` are preserved as inspectable code for the negative-result and high-variance experiments — **do not re-run these for verification**. |
 | **Technical documentation** | [`blog.md`](blog.md) — action/observation/reward spec, all training plots, full benchmark numbers, reproducibility commands |
 | **2-minute pitch script** | [`demo/PITCH.md`](demo/PITCH.md) |
 | **Full design narrative** | [`PROJECT.md`](../PROJECT.md) (repo root) |

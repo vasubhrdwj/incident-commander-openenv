@@ -217,7 +217,7 @@ hf jobs run --flavor t4-medium --secrets HF_TOKEN \
   '
 ```
 
-**Colab path:** open [`training/train_colab.ipynb`](training/train_colab.ipynb) → `Runtime → T4 GPU` → `Run all`. ~17 min wall.
+**Colab path (judges' reproducible artifact):** open [`training/train_sft_colab.ipynb`](training/train_sft_colab.ipynb) → `Runtime → T4 GPU` → `Run all`. ~25 min wall, lands within ±0.05 of the committed `training/sft_metrics.json` numbers.
 
 **Best-of-N reproducibility:**
 
@@ -314,7 +314,9 @@ incident_commander/
 │   ├── train_rft.py         ← preserved as evidence (Attempt 2 failure)
 │   ├── rft_on_sft.py
 │   ├── best_of_n.py
-│   ├── train_colab.ipynb    ← T4-friendly reproducible notebook
+│   ├── train_sft_colab.ipynb    ← T4-friendly reproducible notebook (SFT — judges' artifact)
+│   ├── train_colab.ipynb        ← RFT-on-SFT notebook (high hardware variance, inspect-only)
+│   ├── train_grpo_colab.ipynb   ← original GRPO attempt (negative-result artifact, do not re-run)
 │   ├── sft_metrics.json
 │   └── rft_on_sft_metrics.json
 ├── demo/
