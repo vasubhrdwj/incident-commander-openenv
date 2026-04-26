@@ -126,33 +126,33 @@ All numbers below are from committed `training/sft_metrics.json` and `training/r
 
 Macro-mean Δ = +0.122. The trainer's regression gate refuses to save below +0.05; this run cleared the gate. Adapter shipped to [vasubhrdwj/incident-commander-sft-lora](https://huggingface.co/vasubhrdwj/incident-commander-sft-lora).
 
-![SFT pre vs post per task — easy 0.96 → 0.76, medium 0.77 → 0.79, hard 0.35 → 0.89](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_pre_post.png)
+![SFT pre vs post per task — easy 0.96 → 0.76, medium 0.77 → 0.79, hard 0.35 → 0.89](./blog_assets/sft_pre_post.png)
 
 > The bar chart above is the headline visual. Hard (the rightmost pair) is where the real learning happened — the green bar more than doubles the grey one. Easy regressed because multi-task LoRA bled into a task that was already at the prompt-driven ceiling; medium held flat because Phase-1 prompt fixes already had it near-solved.
 
 ### SFT loss curve
 
-![SFT training loss — descends smoothly from 2.7 to ~2.0 over 9 logged steps](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_loss.png)
+![SFT training loss — descends smoothly from 2.7 to ~2.0 over 9 logged steps](./blog_assets/sft_loss.png)
 
 > NLL bottoms near 2.0 (vs 1.5 from the prior failed run on the longer postmortem). That's the postmortem-simplification working: the shorter target produces a cleaner fit because the model can actually copy it. The clean curve shape — no oscillation, no spike — is what you want to see before trusting the eval numbers.
 
 ### Per-component breakdown (SFT, where the gain came from)
 
-![SFT component breakdown — hard task gains full RCA + mitigation credit](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/sft_components.png)
+![SFT component breakdown — hard task gains full RCA + mitigation credit](./blog_assets/sft_components.png)
 
 > The hard-task panel (rightmost) is the cleanest evidence of what training did. Pre-training, the hard task's RCA and mitigation components were both 0.00 — the model literally never picked the right root cause or right mitigation. Post-training, both are at the maximum weighted contribution (0.20 and 0.15). The other components (containment, MTTR, comms) didn't all hold, which is honest: SFT taught the *decision*, not the timing.
 
 ### RFT-on-SFT polish (Attempt 5)
 
-![RFT-on-SFT training loss across 2 iterations — descends from 0.30 to 0.21](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/training_loss.png)
+![RFT-on-SFT training loss across 2 iterations — descends from 0.30 to 0.21](./blog_assets/training_loss.png)
 
 > Two-iteration RFT loss curve. The descent from 0.30 → 0.21 is small in absolute terms but matters: the trained model is fitting better against its own top-K rollouts each iteration. Compare to the original RFT-on-base run that bottomed at 0.02 — that was the model fully memorizing degenerate trajectories. Here the curve says "modest, healthy update."
 
-![RFT reward over training — kept-mean stable at ~0.88, all-rollouts mean rises slightly](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/training_reward.png)
+![RFT reward over training — kept-mean stable at ~0.88, all-rollouts mean rises slightly](./blog_assets/training_reward.png)
 
 > Three series: grey is the mean of *all* 12 rollouts per iteration, green is the mean of the top-K kept (the rollouts we actually train on), amber is the best-of-batch. The kept-mean staying flat at ~0.88 across both iterations is the sign that the require_done filter held — only quality trajectories made it to the training set. The all-rollouts mean creeping up from ~0.66 to ~0.71 says the policy is genuinely improving on average sampling, not just on its best draws.
 
-![Component comparison — baseline 0.620 vs trained 0.810](https://github.com/vasubhrdwj/incident-commander-openenv/blob/main/incident_commander/blog_assets/component_comparison.png)
+![Component comparison — baseline 0.620 vs trained 0.810](./blog_assets/component_comparison.png)
 
 > Baseline total 0.620, trained total 0.810 — Δ = +0.190 on the same eval seeds. The dashed line is the pre-training mean across all three tasks; the solid line is the post-training mean. The bars are the rubric weights (each component's max possible contribution to the total) — they sum to 1.0, which calibrates how much of the gap to closure is left.
 
